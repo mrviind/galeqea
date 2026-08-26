@@ -878,6 +878,137 @@ def _apply_jira(db, request: ApprovalRequest) -> dict:
 
 
 @registry.register(
+    "open_test_pull_request",
+    description=(
+        "Open a pull request that adds the project's approved tests to the code "
+        "repository as runnable files. Use it to get generated, human-approved "
+        "tests out of GaleQEA and into the codebase where they run in CI beside "
+        "the application. It renders each approved test to a Playwright file, puts "
+        "them on a new branch, and opens a PR against the default branch. Because "
+        "a pull request writes to a repository other people review and merge, it "
+        "files an approval and returns its id — nothing is pushed until a human "
+        "accepts. Only tests that are already approved are included; proposed or "
+        "rejected ones are never pushed. Requires a connected git provider "
+        "(GitHub, GitLab or Bitbucket)."
+    ),
+    parameters={
+        "properties": {
+            "test_keys": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Approved test keys to include, e.g. ['DEMO-T-0001']. Omit to include every approved test.",
+            },
+            "provider": {
+                "type": "string",
+                "enum": ["github", "gitlab", "bitbucket"],
+                "description": "The connected git provider. Defaults to the project's connected one.",
+            },
+            "branch": {
+                "type": "string",
+                "description": "Branch name for the PR. Defaults to galeqea/tests-<date>.",
+            },
+            "title": {"type": "string", "description": "PR title. Sensible default if omitted."},
+            "body": {"type": "string", "description": "PR description. A default summary is generated if omitted."},
+            "target": {
+                "type": "string",
+                "enum": ["playwright", "playwright_py"],
+                "description": "Test file format. Default playwright (TypeScript).",
+            },
+        },
+        "required": [],
+    },
+    read_only=False,
+    external=True,
+    approval_action="git.open_pr",
+    risk=RiskTier.HIGH,
+    category="integrations",
+    scopes=["integrations:write"],
+)
+def open_test_pull_request(args: dict, ctx: ToolContext) -> dict:
+    # Preview only: confirm there are approved tests to push before filing the
+    # approval, so a reviewer is not asked to approve an empty PR.
+    from ..models import TestCase, TestStatus
+
+    stmt = select(TestCase).where(
+        TestCase.project_id == ctx.project_id, TestCase.status == TestStatus.APPROVED
+    )
+    approved = list(ctx.db.execute(stmt).scalars())
+    keys = {k.upper() for k in (args.get("test_keys") or [])}
+    if keys:
+        approved = [c for c in approved if c.key.upper() in keys]
+    if not approved:
+        return {"ok": False, "error": (
+            "No approved tests match — a PR would be empty. Approve some tests first, "
+            "or check the keys." )}
+    return {"target": f"{len(approved)} approved test(s) → pull request"}
+
+
+@applier("git.open_pr")
+def _apply_open_pr(db, request: ApprovalRequest) -> dict:
+    """Render approved tests to files and open the PR once a human has accepted."""
+    from datetime import date
+
+    from ..engine import codegen
+    from ..integrations.git import ProposedChange, open_pull_request
+    from ..models import IntegrationConnection, TestCase, TestStatus
+
+    args = (request.payload or {}).get("arguments", {})
+    project_id = request.project_id
+
+    # Resolve the provider: explicit, else the project's one connected git provider.
+    provider = args.get("provider")
+    if not provider:
+        conn = db.execute(
+            select(IntegrationConnection).where(
+                IntegrationConnection.project_id == project_id,
+                IntegrationConnection.provider.in_(["github", "gitlab", "bitbucket"]),
+                IntegrationConnection.enabled.is_(True),
+            )
+        ).scalars().first()
+        if conn is None:
+            return {"ok": False, "error": (
+                "No git provider is connected. Connect GitHub, GitLab or Bitbucket in "
+                "Settings before opening a pull request.")}
+        provider = conn.provider
+
+    target = args.get("target", "playwright")
+    ext = "spec.ts" if target == "playwright" else "spec.py"
+
+    stmt = select(TestCase).where(
+        TestCase.project_id == project_id, TestCase.status == TestStatus.APPROVED
+    )
+    approved = list(db.execute(stmt).scalars())
+    keys = {k.upper() for k in (args.get("test_keys") or [])}
+    if keys:
+        approved = [c for c in approved if c.key.upper() in keys]
+    if not approved:
+        return {"ok": False, "error": "No approved tests to push."}
+
+    changes = []
+    for case in approved:
+        code = codegen.render(case, target=target)
+        slug = codegen._slug(case.title) or case.key.lower()
+        changes.append(ProposedChange(
+            path=f"tests/galeqea/{slug}.{ext}",
+            content=code,
+            message=f"test: add {case.key} ({case.title})",
+        ))
+
+    branch = args.get("branch") or f"galeqea/tests-{date.today().isoformat()}"
+    title = args.get("title") or f"Add {len(changes)} GaleQEA test(s)"
+    body = args.get("body") or (
+        f"Adds {len(changes)} approved test(s) generated in GaleQEA and reviewed by a human.\n\n"
+        + "\n".join(f"- {c.message[6:]}" for c in changes)
+    )
+    result = open_pull_request(
+        db, project_id=project_id, provider=provider,
+        branch=branch, title=title, body=body, changes=changes,
+    )
+    return {"ok": True, "pull_request": result, "tests_pushed": len(changes),
+            "branch": branch, "provider": provider}
+
+
+@registry.register(
     "push_results_to_xray",
     description=(
         "Publish run results to Xray as a test execution, mapping GaleQEA tests onto "
