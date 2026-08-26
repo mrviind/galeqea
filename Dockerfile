@@ -4,7 +4,7 @@
 # deployment is one container on one port with no reverse proxy to configure.
 
 # --- stage 1: build the web UI ---------------------------------------------
-FROM node:22-slim AS web
+FROM node:25-slim AS web
 WORKDIR /build
 COPY apps/web/package.json ./
 RUN npm install --no-audit --no-fund
