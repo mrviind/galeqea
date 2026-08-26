@@ -19,6 +19,7 @@ end has to parse back apart.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -51,6 +52,7 @@ from .plan_gate import (
     stash_plan,
     summarise_execution,
 )
+from .prompt_slots import clear_prompt, is_cancel, pending_prompt, set_prompt
 from .providers.base import LLMProvider, Message, Role
 from .providers.registry import default_provider, for_project
 from .router import route
@@ -279,6 +281,12 @@ class Orchestrator:
                 "findings": injection.as_dict()["findings"][:3],
             })
 
+        # If the chat asked the user for one input (e.g. a URL), their next
+        # message is the answer to that question — handled before anything else.
+        resumed = await self._resume_prompt(session, text, ctx, warnings)
+        if resumed is not None:
+            return resumed
+
         # A pending plan takes precedence over the router: while the agent is
         # waiting on the user to confirm a plan, their next message is an answer
         # to it — proceed, stop, or a revision — not a fresh command.
@@ -294,6 +302,13 @@ class Orchestrator:
             # Not a yes and not a no: the user wants something else. Drop the
             # stale plan and handle the message as a new request.
             clear_plan(session)
+
+        # The first-run on-ramp: a URL in the message (or an explicit "test my
+        # site") means the user wants to point GaleQEA at something and test it
+        # right now. This works with no model, so a fresh user is never stuck.
+        onramp = await self._detect_onramp(session, text, ctx, warnings)
+        if onramp is not None:
+            return onramp
 
         await self._status(session, project_id, "Understanding the request")
 
@@ -406,6 +421,85 @@ class Orchestrator:
                     session, [{"tool": e["tool"]} for e in executed]
                 ),
             ),
+        )
+
+    # ------------------------------------------------------------------ #
+    # The first-run on-ramp: enter a URL, test it now. No model required.
+    # ------------------------------------------------------------------ #
+    _WANTS_TO_TEST = re.compile(
+        r"\b(test|smoke|check|try|scan|probe)\b.{0,30}\b"
+        r"(site|website|web ?app|app|application|url|page|link|something)\b",
+        re.IGNORECASE,
+    )
+
+    async def _resume_prompt(self, session, text, ctx, warnings) -> ChatReply | None:
+        """If the chat is waiting on one answer (a URL), consume this message as it."""
+        from ..services.onramp import find_url
+
+        prompt = pending_prompt(session)
+        if not prompt or prompt.get("slot") != "smoke_url":
+            return None
+        if is_cancel(text):
+            clear_prompt(session)
+            return ChatReply(
+                text="No problem — paste a URL whenever you'd like to test a site.",
+                path="onramp", warnings=warnings,
+            )
+        url = find_url(text)
+        if not url:
+            # Keep the slot open and ask again rather than losing their place.
+            return ChatReply(
+                text=("That doesn't look like a web address. Paste the full URL, "
+                      "e.g. https://example.com — or say 'cancel'."),
+                path="onramp", warnings=warnings,
+            )
+        clear_prompt(session)
+        return await self._run_onramp(session, url, ctx, warnings)
+
+    async def _detect_onramp(self, session, text, ctx, warnings) -> ChatReply | None:
+        """Spot a fresh 'test this URL' request, or ask for the URL if it's missing."""
+        from ..services.onramp import find_url
+
+        url = find_url(text)
+        if url:
+            return await self._run_onramp(session, url, ctx, warnings)
+        if self._WANTS_TO_TEST.search(text):
+            set_prompt(session, slot="smoke_url", question="Which URL should I test?")
+            return ChatReply(
+                text=("Sure — which URL should I test? Paste the full address, "
+                      "e.g. https://example.com. I'll open it in a real browser and "
+                      "check it loads cleanly."),
+                path="onramp", warnings=warnings,
+            )
+        return None
+
+    async def _run_onramp(self, session, url, ctx, warnings) -> ChatReply:
+        """Point the project at ``url`` and run the built-in smoke check inline."""
+        from ..services.onramp import normalize_url, run_smoke
+
+        await self._status(session, session.project_id, f"Testing {normalize_url(url)}")
+        result = await run_smoke(
+            self.db, project_id=session.project_id, url=url, triggered_by=ctx.actor_id,
+        )
+        text = result.get("summary") or "Done."
+        suggestions: list[str] = []
+        if result.get("ok"):
+            text += ("\n\nThat's your first run — the target is set, so you can just say "
+                     "\"run smoke\" again anytime. Want me to record a click-through and "
+                     "turn it into a saved test?")
+            suggestions = ["record a test", "run smoke again", "what did you find?"]
+        elif result.get("timed_out"):
+            text = (f"I started testing {result.get('target')} (run #{result.get('run_number')}), "
+                    "but it's taking a while — watch the run for the result.")
+        blocks = [{
+            "type": "smoke_result",
+            **{k: result.get(k) for k in (
+                "ok", "status", "target",
+                "console_errors", "network_failures", "run_id", "run_number")},
+        }]
+        return ChatReply(
+            text=text, blocks=blocks, path="onramp",
+            warnings=warnings, suggestions=suggestions,
         )
 
     # ------------------------------------------------------------------ #

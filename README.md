@@ -9,7 +9,7 @@ heal, analyse and report on them from a chat box. Every write passes a human
 approval gate. The AI can never approve its own output.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-59%20passing-brightgreen.svg)](apps/api/tests)
+[![Tests](https://img.shields.io/badge/tests-624%20passing-brightgreen.svg)](apps/api/tests)
 [![Offline](https://img.shields.io/badge/works-fully%20offline-informational.svg)](#no-ai-mode-is-the-default)
 
 </div>
@@ -34,21 +34,35 @@ five choices that change what the product can actually do:
 
 ## Quick start
 
+Clone, then one command does the rest — it installs the Python and Node
+dependencies, downloads a Chromium, builds the UI, and launches on
+**http://localhost:8080**.
+
 ```bash
-git clone https://github.com/galeqea/galeqea && cd galeqea
-make setup        # Python + Node deps, Chromium, UI build
-make up           # http://localhost:8080
+git clone https://github.com/mrviind/galeqea && cd galeqea && make start
 ```
 
-Then, in the chat box:
+`make start` is the first-run command. Every run after that is just `make up`
+(it skips the install). No API key is required — GaleQEA is **fully offline by
+default** (see [No-AI mode](#no-ai-mode-is-the-default)).
+
+Then, in the chat box, point it at anything you want to test:
 
 ```
-run the smoke tests on staging
+test https://your-app.com
 ```
 
-That command needs no model. So do `rerun only failed`, `what's not tested?`,
-`which tests are flaky?`, `why did the last run fail?` and
-`schedule regression nightly at 2am`.
+GaleQEA opens it in a real browser, checks it loads cleanly, and sets it as your
+target — **no model, no setup, no test to write first.** Just say `test my site`
+and it'll ask you for the URL. That's the on-ramp; from there everything else is a
+sentence away:
+
+```
+run smoke again          what's not tested?          why did the last run fail?
+rerun only failed        which tests are flaky?      schedule regression nightly at 2am
+```
+
+None of those needs a model either.
 
 **Docker instead:**
 
@@ -368,8 +382,11 @@ Plan-Act-Verify loop and reports findings a human triages.
   that trips up most integrations.
 - **CI** — Jenkins, GitHub Actions, GitLab CI, Azure DevOps, plus direct upload of
   JUnit / Playwright / Allure reports for air-gapped installs.
-- **Git** — GitHub, GitLab, Bitbucket. Script changes arrive as **pull requests**,
-  never as direct commits.
+- **Git** — GitHub, GitLab, Bitbucket. Ask the chat to
+  `open a pull request with the approved checkout tests` and GaleQEA renders each
+  approved test to a Playwright file and opens a **pull request** — never a direct
+  commit, and only after the `git.open_pr` approval is granted. The AI proposes the
+  PR; a human lets it out.
 - **MCP server** — the same tool registry that powers the built-in chat, exposed to
   Claude Code, Cursor and VS Code. See [docs/MCP.md](docs/MCP.md).
 - **Plugin SDK** — manifest-based, capability-scoped, hot-loadable. See
@@ -455,8 +472,12 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) for the design decisions and their reaso
 | [docs/AI.md](docs/AI.md) | How requirements become tests, and bring-your-own-key |
 | [docs/AUTHORING.md](docs/AUTHORING.md) | Session recording, API specification import, synthetic test data |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Exporting test cases to Xray, Zephyr, Azure DevOps, TestRail |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributor guide, including the AI-code review gate |
-| [SECURITY.md](SECURITY.md) | Threat model and reporting |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributor guide — dev setup, Conventional Commits, DCO, the AI-code review gate |
+| [SECURITY.md](SECURITY.md) | Threat model and vulnerability reporting |
+| [SUPPORT.md](SUPPORT.md) | Where to ask questions vs. file bugs |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 |
+| [CHANGELOG.md](CHANGELOG.md) | Notable changes, per release |
+| [RELEASING.md](RELEASING.md) | How releases are cut from commit history |
 | [docs/brand](docs/brand/README.md) | The mark, the palette, and why the brand spends no colour |
 
 ---

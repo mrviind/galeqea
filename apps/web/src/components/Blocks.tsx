@@ -41,6 +41,7 @@ function Block({ block }: { block: ChatBlock }) {
     case 'approval_list': return <ApprovalList block={block} />;
     case 'rca': return <RcaBlock block={block} />;
     case 'mode_notice': return <ModeNotice block={block} />;
+    case 'smoke_result': return <SmokeResult block={block} />;
     case 'cta': return <CtaBlock block={block} />;
     case 'error': return <ErrorBlock block={block} />;
     default: return null;
@@ -397,6 +398,46 @@ function ModeNotice({ block }: { block: ChatBlock }) {
           </li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+function SmokeResult({ block }: { block: ChatBlock }) {
+  const navigate = useNavigate();
+  const ok = !!block.ok;
+  const consoleErrors = (block.console_errors ?? []).length;
+  const networkFailures = (block.network_failures ?? []).length;
+  return (
+    <Card tone={ok ? undefined : 'danger'}>
+      <div className="flex items-center gap-2">
+        {ok
+          ? <Check size={13} className="text-pass" />
+          : <X size={13} className="text-fail" />}
+        <span className="text-[12px] font-medium text-ink-2">
+          {ok ? 'Smoke check passed' : 'Smoke check failed'}
+        </span>
+        {block.run_number ? (
+          <span className="ml-auto text-[11px] text-ink-3">run #{block.run_number}</span>
+        ) : null}
+      </div>
+      <div className="mt-1 flex items-baseline gap-1.5 text-[11.5px] text-ink-3">
+        <Target size={10} className="shrink-0" /> {block.target}
+      </div>
+      {(consoleErrors > 0 || networkFailures > 0) && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {consoleErrors > 0 && (
+            <Chip tone="warn">{consoleErrors} console error{consoleErrors > 1 ? 's' : ''}</Chip>
+          )}
+          {networkFailures > 0 && (
+            <Chip tone="warn">{networkFailures} server (5xx)</Chip>
+          )}
+        </div>
+      )}
+      {block.run_id && (
+        <div className="mt-2">
+          <Button size="sm" variant="ghost" onClick={() => navigate('/runs')}>View run</Button>
+        </div>
+      )}
     </Card>
   );
 }
