@@ -17,8 +17,8 @@ jobs:
     name: API · tests and lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: '3.12', cache: pip }
       - run: pip install -e "apps/api[dev]"
       - run: ruff check apps/api/galeqea
@@ -28,8 +28,8 @@ jobs:
     name: Web · typecheck and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: '22', cache: npm, cache-dependency-path: apps/web/package.json }
       - run: cd apps/web && npm install --no-audit --no-fund
       - run: cd apps/web && npx tsc --noEmit
@@ -39,8 +39,8 @@ jobs:
     name: Runner · protocol self-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: '22' }
       - run: cd apps/runner && npm install --no-audit --no-fund
       - run: cd apps/runner && node src/cli.mjs --self-test
@@ -49,10 +49,10 @@ jobs:
     name: End to end · real browser
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: '3.12', cache: pip }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: '22' }
       - run: pip install -e "apps/api[dev]"
       - run: cd apps/runner && npm install --no-audit --no-fund && npx playwright install --with-deps chromium
@@ -71,7 +71,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: Require a human reviewer for AI-assisted commits
         env:

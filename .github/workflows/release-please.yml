@@ -15,7 +15,7 @@ jobs:
       # it bumps the version, updates CHANGELOG.md, and tags vX.Y.Z. Nothing is
       # released without a human merging that PR - the same shape as the product's
       # own approval gate.
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
