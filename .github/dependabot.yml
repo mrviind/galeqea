@@ -1,5 +1,7 @@
 # Keep dependencies current across the polyglot repo. Grouped so a week's patch
 # and minor updates arrive as one reviewable PR per ecosystem, not a swarm.
+# Major bumps are ignored by default — they tend to break the build and deserve a
+# deliberate, human-driven upgrade rather than an automatic PR.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -8,6 +10,9 @@ updates:
     groups:
       python-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     labels: ["type/build", "area/backend"]
 
   - package-ecosystem: npm
@@ -16,6 +21,9 @@ updates:
     groups:
       web-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     labels: ["type/build", "area/frontend"]
 
   - package-ecosystem: npm
@@ -24,6 +32,9 @@ updates:
     groups:
       runner-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     labels: ["type/build", "area/runner"]
 
   - package-ecosystem: github-actions
@@ -32,9 +43,15 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     labels: ["type/ci"]
 
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     labels: ["type/build"]
