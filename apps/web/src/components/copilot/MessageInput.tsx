@@ -29,7 +29,11 @@ export function MessageInput({
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    // Floor at one comfortable line. scrollHeight can read 0/too-small when the
+    // effect runs before layout or web fonts settle; without a floor the box
+    // collapses and the placeholder clips against the top border. The CSS
+    // min-height below is the real guard — this keeps the grown height sane.
+    el.style.height = `${Math.max(40, Math.min(el.scrollHeight, 160))}px`;
   }, [value]);
 
   return (
@@ -73,7 +77,7 @@ export function MessageInput({
             }
           }}
           placeholder={disabled ? 'Select a project first' : 'Ask, or tell GaleQEA what to run…'}
-          className="max-h-[160px] w-full resize-none bg-transparent px-2.5 py-2 text-[12.5px] leading-relaxed text-ink placeholder:text-ink-3 focus:outline-none disabled:cursor-not-allowed"
+          className="block max-h-[160px] min-h-[40px] w-full resize-none bg-transparent px-3 py-2.5 text-[12.5px] leading-normal text-ink placeholder:text-ink-3 focus:outline-none disabled:cursor-not-allowed"
         />
         <div className="flex items-center gap-2 border-t border-line px-1.5 py-1.5">
           <ModelSelector value={model} onChange={onModelChange} />
