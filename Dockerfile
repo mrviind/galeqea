@@ -29,7 +29,7 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY apps/api/pyproject.toml apps/api/
+COPY apps/api/pyproject.toml apps/api/README.md apps/api/
 COPY apps/api/galeqea apps/api/galeqea
 RUN python3 -m pip install --break-system-packages -e ./apps/api
 
