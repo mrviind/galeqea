@@ -1,0 +1,17 @@
+{
+  "slug": "markdown-reporter",
+  "name": "Markdown Run Reporter",
+  "version": "1.0.0",
+  "kind": "reporter",
+  "entrypoint": "plugin.py",
+  "sdk_version": "1.0",
+  "description": "Writes a readable Markdown summary of every finished run, with failures ordered by whether they are new.",
+  "author": "GaleQEA Contributors",
+  "permissions": ["read:runs", "fs:artifacts"],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "output_dir": { "type": "string", "description": "Where to write reports." }
+    }
+  }
+}

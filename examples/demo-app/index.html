@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>Acme Checkout — Demo App</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 20px;color:#111}
+ label{display:block;margin:14px 0 4px;font-weight:600}
+ input{padding:9px;width:100%;border:1px solid #ccc;border-radius:6px}
+ button{margin-top:18px;padding:10px 18px;border:0;border-radius:6px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
+ .error{color:#b91c1c;margin-top:12px}
+ .ok{color:#047857;margin-top:12px;font-weight:600}
+ [hidden]{display:none}
+</style>
+</head>
+<body>
+<h1>Acme Checkout</h1>
+<p>A tiny application under test for GaleQEA's demo.</p>
+<p><a href="/account.html">Account settings</a></p>
+<form id="f">
+  <label for="email">Email address</label>
+  <input id="email" name="email" type="email" placeholder="you@example.com" />
+  <label for="card">Card number</label>
+  <input id="card" name="card" data-testid="cc-number-v2" placeholder="4242 4242 4242 4242" />
+  <button type="submit" data-testid="pay-button">Confirm payment</button>
+</form>
+<p id="err" class="error" hidden role="alert"></p>
+<section id="done" hidden>
+  <h2>Order confirmed</h2>
+  <p class="ok">Order number <span id="order">AC-10042</span> — total <span id="total">£49.00</span></p>
+</section>
+<script>
+document.getElementById('f').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim();
+  const card = document.getElementById('card').value.replace(/\s/g,'');
+  const err = document.getElementById('err');
+  err.hidden = true;
+  if (!email.includes('@')) { err.textContent = 'Enter a valid email address so we can send your receipt.'; err.hidden = false; return; }
+  if (card.length < 16) { err.textContent = 'That card number is too short. Check it and try again.'; err.hidden = false; return; }
+  document.getElementById('f').hidden = true;
+  document.getElementById('done').hidden = false;
+});
+</script>
+</body>
+</html>

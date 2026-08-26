@@ -1,0 +1,68 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+ :root{--bg:#0b0c0e;--s:#111214;--s2:#17181b;--s3:#1e2024;--line:#26282d;--ls:#33363d;--ink:#e8e9ec;--ink2:#a0a4ad;--ink3:#6e727c;--ac:#58a6ff}
+ *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;padding:36px;font-feature-settings:"tnum"}
+ h1{font-size:15px;font-weight:600;margin:0 0 3px}.sub{font-size:11.5px;color:var(--ink3);margin:0 0 26px}
+ .row{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:14px;margin-bottom:14px}
+ .card{background:var(--s);border:1px solid var(--line);border-radius:14px;padding:16px}
+ .lbl{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-bottom:12px}
+ .sw{display:flex;gap:0;margin-bottom:10px}.sw div{flex:1;height:38px}.sw div:first-child{border-radius:8px 0 0 8px}.sw div:last-child{border-radius:0 8px 8px 0}
+ .sn{display:flex;gap:0;font-size:8.5px;color:var(--ink3);font-family:'JetBrains Mono',monospace}
+ .sn span{flex:1;padding-top:5px}
+ .btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+ button{font-family:inherit;font-size:12.5px;font-weight:500;padding:7px 13px;border:1px solid;border-radius:14px;cursor:pointer}
+ .pri{background:var(--ink);color:var(--bg);border-color:transparent;font-weight:600}
+ .gho{background:var(--s2);color:var(--ink2);border-color:var(--line)}
+ .sub2{background:transparent;color:var(--ink3);border-color:transparent}
+ .dan{background:transparent;color:#f85149;border-color:rgba(248,81,73,.3)}
+ .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid;border-radius:99px;padding:2px 7px;font-size:11px;font-weight:500}
+ .dot{width:6px;height:6px;border-radius:99px}
+ .pills{display:flex;gap:6px;flex-wrap:wrap}
+ .mk{display:flex;align-items:center;gap:22px}
+ .inv{background:var(--ink);padding:8px;display:flex;border-radius:10px}
+ .type p{margin:0 0 7px}
+</style></head><body>
+<h1>GaleQEA — visual system</h1>
+<p class="sub">Monochrome brand · soft corners, capsule status badges · saturation reserved for status</p>
+
+<div class="row">
+  <div class="card"><div class="lbl">Mark</div>
+    <div class="mk">
+      <svg width="42" height="42" viewBox="0 0 32 32" fill="#e8e9ec"><rect x="3" y="4" width="26" height="4.6"/><rect x="13.7" y="8.6" width="4.6" height="7.4"/><rect x="13.7" y="19.4" width="4.6" height="8.6"/></svg>
+      <div class="inv"><svg width="24" height="24" viewBox="0 0 32 32" fill="#0b0c0e"><rect x="3" y="4" width="26" height="4.6"/><rect x="13.7" y="8.6" width="4.6" height="7.4"/><rect x="13.7" y="19.4" width="4.6" height="8.6"/></svg></div>
+      <svg width="16" height="16" viewBox="0 0 32 32" fill="#e8e9ec"><rect x="3" y="4" width="26" height="4.6"/><rect x="13.7" y="8.6" width="4.6" height="7.4"/><rect x="13.7" y="19.4" width="4.6" height="8.6"/></svg>
+      <span style="font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace">16px</span>
+    </div>
+  </div>
+  <div class="card"><div class="lbl">Surfaces</div>
+    <div class="sw"><div style="background:#0b0c0e;border:1px solid var(--line)"></div><div style="background:#111214"></div><div style="background:#17181b"></div><div style="background:#1e2024"></div><div style="background:#26282d"></div></div>
+    <div class="sn"><span>0b0c0e</span><span>111214</span><span>17181b</span><span>1e2024</span><span>26282d</span></div>
+  </div>
+  <div class="card"><div class="lbl">Text &amp; accent</div>
+    <div class="sw"><div style="background:#e8e9ec"></div><div style="background:#a0a4ad"></div><div style="background:#6e727c"></div><div style="background:#58a6ff"></div></div>
+    <div class="sn"><span>e8e9ec</span><span>a0a4ad</span><span>6e727c</span><span>58a6ff</span></div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card"><div class="lbl">Status — the only saturation</div>
+    <div class="pills">
+      <span class="pill" style="color:#3fb950;background:rgba(63,185,80,.1);border-color:rgba(63,185,80,.3)"><i class="dot" style="background:#3fb950"></i>Passed</span>
+      <span class="pill" style="color:#f85149;background:rgba(248,81,73,.1);border-color:rgba(248,81,73,.3)"><i class="dot" style="background:#f85149"></i>Failed</span>
+      <span class="pill" style="color:#d29922;background:rgba(210,153,34,.1);border-color:rgba(210,153,34,.3)"><i class="dot" style="background:#d29922"></i>Flaky</span>
+      <span class="pill" style="color:#58a6ff;background:rgba(88,166,255,.1);border-color:rgba(88,166,255,.3)"><i class="dot" style="background:#58a6ff"></i>Running</span>
+      <span class="pill" style="color:#db6d28;background:rgba(219,109,40,.1);border-color:rgba(219,109,40,.3)"><i class="dot" style="background:#db6d28"></i>Blocked</span>
+      <span class="pill" style="color:#39c5cf;background:rgba(57,197,207,.1);border-color:rgba(57,197,207,.3)"><i class="dot" style="background:#39c5cf"></i>Needs review</span>
+    </div>
+  </div>
+  <div class="card"><div class="lbl">Controls — 14px</div>
+    <div class="btns"><button class="pri">Approve</button><button class="gho">Run again</button><button class="sub2">Cancel</button><button class="dan">Reject</button></div>
+  </div>
+  <div class="card type"><div class="lbl">Type</div>
+    <p style="font-size:15px;font-weight:600">Inter — interface</p>
+    <p style="font-size:12px;color:var(--ink2)">Tabular figures: 1,204ms · 88.3% · 0.86</p>
+    <p style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink3)">getByRole('button', { name: 'Pay' })</p>
+  </div>
+</div>
+</body></html>

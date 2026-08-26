@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push: { branches: [main] }
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API · tests and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip }
+      - run: pip install -e "apps/api[dev]"
+      - run: ruff check apps/api/galeqea
+      - run: cd apps/api && python -m pytest -q
+
+  web:
+    name: Web · typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm, cache-dependency-path: apps/web/package.json }
+      - run: cd apps/web && npm install --no-audit --no-fund
+      - run: cd apps/web && npx tsc --noEmit
+      - run: cd apps/web && npm run build
+
+  runner:
+    name: Runner · protocol self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: cd apps/runner && npm install --no-audit --no-fund
+      - run: cd apps/runner && node src/cli.mjs --self-test
+
+  e2e:
+    name: End to end · real browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: pip install -e "apps/api[dev]"
+      - run: cd apps/runner && npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      # Serve the bundled application under test, then drive the whole pipeline:
+      # ingest → propose → approve → run → triage.
+      - run: cd examples/demo-app && python -m http.server 8765 &
+      - run: cd apps/api && python -m pytest -q
+      - name: Verify the audit ledger
+        run: cd apps/api && python -m galeqea.cli audit --verify-only
+
+  ai-review-gate:
+    name: Human review gate on AI-assisted changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Require a human reviewer for AI-assisted commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # GaleQEA enforces on itself what it enforces on its users: no
+          # AI-generated change reaches main without a human who read it.
+          range="origin/${{ github.base_ref }}...HEAD"
+          if git log "$range" --format='%B' | grep -qiE '^Assisted-by:|Co-authored-by:.*(claude|copilot|cursor|gpt)'; then
+            echo "::notice::This PR contains AI-assisted commits and requires review by a human other than the author."
+            approvals=$(gh pr view ${{ github.event.number }} --json reviews \
+              --jq "[.reviews[] | select(.state==\"APPROVED\") | select(.author.login != \"${{ github.event.pull_request.user.login }}\")] | length")
+            if [ "${approvals:-0}" -lt 1 ]; then
+              echo "::error::AI-assisted changes require an approving review from someone other than the author."
+              exit 1
+            fi
+            echo "Human review present."
+          else
+            echo "No AI-assisted commits detected."
+          fi

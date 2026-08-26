@@ -1,0 +1,59 @@
+[project]
+name = "galeqea"
+version = "0.1.0"
+description = "GaleQEA - AI-first, local-first, open-source test automation platform"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "GaleQEA Contributors" }]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "sqlalchemy>=2.0.36",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "python-multipart>=0.0.17",
+  "httpx>=0.27",
+  "cryptography>=43.0",
+  "passlib[bcrypt]>=1.7.4",
+  "pyjwt>=2.9",
+  "apscheduler>=3.10",
+  "pypdf>=5.1",
+  "python-docx>=1.1",
+  "numpy>=1.26",
+  "typer>=0.13",
+  "rich>=13.9",
+  "jinja2>=3.1",
+  # Visual regression: real pixel comparison and perceptual hashing. The code
+  # degrades to structural-only comparison without it, but that loses the
+  # ability to say *where* a screen changed.
+  "pillow>=11.0",
+  # Requirement registers arrive as spreadsheets more often than as prose.
+  "openpyxl>=3.1",
+  # OpenAPI documents are YAML more often than JSON. Declared explicitly rather
+  # than relied on transitively through uvicorn[standard].
+  "pyyaml>=6.0",
+  "mcp>=1.2",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2", "pgvector>=0.3"]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.7", "mypy>=1.13"]
+
+[project.scripts]
+galeqea = "galeqea.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["galeqea"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008", "E501"]

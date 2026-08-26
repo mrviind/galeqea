@@ -1,0 +1,56 @@
+# Single-command self-hosting:  docker compose up
+#
+# Defaults to SQLite in a named volume so this works with no configuration.
+# Uncomment the postgres service for a multi-user deployment.
+
+services:
+  galeqea:
+    build: .
+    image: galeqea:local
+    ports:
+      - "8080:8080"
+    volumes:
+      - galeqea-data:/data
+    environment:
+      GALEQEA_HOME: /data
+      GALEQEA_HOST: 0.0.0.0
+      # A deployment reachable by more than one person must not skip login.
+      GALEQEA_SINGLE_USER_MODE: "true"
+      # Model configuration is optional — GaleQEA runs fully offline without it.
+      # GALEQEA_AI_MODE: api_key
+      # GALEQEA_PROVIDER: anthropic
+      # GALEQEA_MODEL: claude-opus-5
+      # GALEQEA_API_KEY: ${ANTHROPIC_API_KEY}
+      #
+      # Fully offline with a local model:
+      # GALEQEA_AI_MODE: local
+      # GALEQEA_PROVIDER: ollama
+      # GALEQEA_BASE_URL: http://host.docker.internal:11434/v1
+      # GALEQEA_MODEL: llama3.1
+      #
+      # DATABASE_URL for the postgres profile below:
+      # GALEQEA_DATABASE_URL: postgresql+psycopg://galeqea:galeqea@postgres:5432/galeqea
+    restart: unless-stopped
+    # Chromium needs more shared memory than Docker's 64MB default; without
+    # this, browsers crash intermittently under parallel execution.
+    shm_size: 1gb
+
+  # Optional. Enable with:  docker compose --profile postgres up
+  postgres:
+    image: pgvector/pgvector:pg16
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: galeqea
+      POSTGRES_PASSWORD: galeqea
+      POSTGRES_DB: galeqea
+    volumes:
+      - galeqea-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U galeqea"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  galeqea-data:
+  galeqea-pg:

@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# GaleQEA runtime data — never commit a local install's database or secrets
+.galeqea/
+*.db
+*.db-wal
+*.db-shm
+secret.key
+vault.key
+artifacts/
+test-results/
+playwright-report/
+
+# Environment
+.env
+.env.local
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

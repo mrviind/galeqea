@@ -1,0 +1,17 @@
+{
+  "name": "@galeqea/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GaleQEA Playwright execution engine",
+  "license": "Apache-2.0",
+  "bin": { "galeqea-runner": "./src/cli.mjs" },
+  "scripts": {
+    "install-browsers": "playwright install chromium",
+    "install-browsers:all": "playwright install",
+    "smoke": "node src/cli.mjs --self-test"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

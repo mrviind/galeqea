@@ -1,0 +1,232 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   Two rules drive everything below.
+
+   1. **Colour is signal.** In a test platform, green/red/amber already mean
+      something specific. A brand hue competing with them makes the signal
+      harder to read, so the brand is monochrome and every drop of saturation
+      is reserved for status. One restrained accent (a link blue) carries
+      interactivity — focus, links, the live state — and nothing else.
+
+   2. **Generously rounded.** Panels, cards and controls carry a soft radius,
+      and status badges are full capsules - the shape reads as a label rather
+      than a button, which is what a status is.
+
+   The surface ramp is a neutral near-black rather than a blue-tinted one, so
+   status hues render true against it.
+--------------------------------------------------------------------------- */
+@theme {
+  /* --- surfaces --------------------------------------------------------- */
+  --color-canvas: #0b0c0e;
+  --color-surface: #111214;
+  --color-surface-2: #17181b;
+  --color-surface-3: #1e2024;
+  --color-line: #26282d;
+  --color-line-strong: #33363d;
+
+  /* --- text ------------------------------------------------------------- */
+  --color-ink: #e8e9ec;
+  --color-ink-2: #a0a4ad;
+  --color-ink-3: #6e727c;
+
+  /* --- accent ----------------------------------------------------------- */
+  /* One accent, used for interactivity only. `brand`/`brand-2` are retained as
+     names so call sites stay stable, but both now resolve into the same blue
+     family - there is no second brand hue and no gradient. */
+  --color-accent: #58a6ff;
+  --color-accent-dim: #1f4b7a;
+  --color-accent-bright: #a5d0ff;
+  --color-brand: #58a6ff;
+  --color-brand-2: #79b8ff;
+
+  /* --- status (GitHub Primer dark: proven contrast on a near-black ground) */
+  --color-pass: #3fb950;
+  --color-fail: #f85149;
+  --color-flaky: #d29922;
+  --color-blocked: #db6d28;
+  --color-review: #39c5cf;
+  --color-running: #58a6ff;
+  --color-skip: #6e727c;
+
+  /* --- type ------------------------------------------------------------- */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* --- geometry --------------------------------------------------------- */
+  /* Tuned to element size: a 20px chip and a 600px panel need different radii
+     to *look* equally soft. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
+  --radius-4xl: 32px;
+}
+
+@layer base {
+  :root { color-scheme: dark; }
+
+  html, body, #root { height: 100%; }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    /* Tabular figures matter here: durations and counts update live, and
+       proportional digits make every row jitter as they do. */
+    font-feature-settings: "cv02", "cv03", "cv04", "tnum", "ss01";
+  }
+
+  ::selection { background: var(--color-accent-dim); color: var(--color-ink); }
+
+  /* Slim. This UI is dense with lists and a chunky native bar steals
+     horizontal space from every one of them. */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border: 3px solid transparent;
+    border-radius: 99px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #454a56; background-clip: content-box; }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+  }
+
+  .panel-2 {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+  }
+
+  /* Status badges are capsules: the shape reads as a label rather than a
+     button, which is what a status is. */
+  .pill { border-radius: 9999px; }
+
+  /* Marks a surface the agent is currently acting on: a light travelling
+     around the border itself, drawn with a mask so it traces the rounded
+     corners exactly rather than sitting as a bar on top of them. */
+  .agent-glow {
+    position: relative;
+    isolation: isolate;
+  }
+  .agent-glow::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      120deg,
+      var(--color-accent-dim),
+      var(--color-accent),
+      var(--color-accent-bright),
+      var(--color-accent),
+      var(--color-accent-dim)
+    );
+    background-size: 200% 100%;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: sweep 3s linear infinite;
+    z-index: -1;
+  }
+
+  @keyframes sweep {
+    to { background-position: 200% 0; }
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: -0.01em;
+    font-feature-settings: "tnum";
+  }
+
+  .pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(0.8); }
+  }
+
+  /* Status dots stay circular. Everything else is square. */
+  .dot { border-radius: 9999px !important; }
+}
+
+/* ── Runtime-generated markup ───────────────────────────────────────────────
+   `renderMarkdown` and highlight.js emit these class names while the page is
+   running, so no content scan can see them. Plain CSS on purpose — Tailwind
+   prunes @layer components against the content globs, and a class no glob can
+   find is a class that vanishes from the production bundle while the dev server
+   still looks correct.
+
+   Colours come from the @theme tokens directly (they are hex, not rgb triplets,
+   so `var(--color-x)` is the correct reference and `rgb(var(--x) / a)` is not).
+   Alpha is done with color-mix so a single token still drives both.            */
+
+.prose-doc { font-size: 13.5px; line-height: 1.7; color: var(--color-ink); }
+.prose-doc > * + * { margin-top: 0.9rem; }
+.prose-doc h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.02em; margin-top: 0; }
+.prose-doc h2 {
+  font-size: 1.02rem; font-weight: 600; letter-spacing: -0.012em;
+  margin-top: 1.9rem; padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-line);
+}
+.prose-doc h3 { font-size: 0.94rem; font-weight: 600; margin-top: 1.4rem; }
+.prose-doc p { color: var(--color-ink-2); }
+.prose-doc ul { list-style: disc; padding-left: 1.15rem; }
+.prose-doc ol { list-style: decimal; padding-left: 1.15rem; }
+.prose-doc li { color: var(--color-ink-2); }
+.prose-doc li + li { margin-top: 0.3rem; }
+.prose-doc strong { color: var(--color-ink); font-weight: 600; }
+.prose-doc em { font-style: italic; }
+.prose-doc hr { border-top: 1px solid var(--color-line); }
+.prose-doc code {
+  font-family: var(--font-mono), ui-monospace, monospace; font-size: 0.86em;
+  background: var(--color-surface-2); border: 1px solid var(--color-line);
+  border-radius: 4px; padding: 0.05rem 0.28rem; color: var(--color-ink-2);
+}
+/* A blockquote in a requirement is the analyst flagging something unresolved,
+   so it is styled as a warning rather than as decorative pull-quote text. */
+.prose-doc blockquote {
+  border-left: 2px solid var(--color-flaky);
+  background: color-mix(in srgb, var(--color-flaky) 8%, transparent);
+  padding: 0.6rem 0.9rem; border-radius: 0 6px 6px 0;
+  color: var(--color-ink-2); font-size: 12.5px;
+}
+.prose-doc blockquote strong { color: var(--color-flaky); }
+
+/* highlight.js, mapped onto the theme tokens so code reads in both themes. */
+.hljs-comment, .hljs-quote { color: var(--color-ink-3); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type, .hljs-built_in { color: var(--color-accent); }
+.hljs-string, .hljs-regexp, .hljs-addition { color: var(--color-pass); }
+.hljs-number, .hljs-symbol, .hljs-attr, .hljs-variable, .hljs-template-variable { color: var(--color-flaky); }
+.hljs-title, .hljs-title.class_, .hljs-title.function_, .hljs-name, .hljs-section {
+  color: var(--color-ink); font-weight: 600;
+}
+.hljs-deletion { color: var(--color-fail); }
+.hljs-meta, .hljs-punctuation { color: var(--color-ink-3); }
