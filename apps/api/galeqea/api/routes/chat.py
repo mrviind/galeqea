@@ -134,12 +134,21 @@ def preview_command(
     """What would this message do? Used by the UI to show intent before sending."""
     from ...ai.router import route
     from ...models import Run
+    from ...services.onramp import preview as onramp_preview
+
+    text = payload.get("text", "")
+
+    # The on-ramp handles a URL (or "test my site") deterministically, so the
+    # preview must say so rather than falling through to "unknown / agent".
+    on_ramp = onramp_preview(text)
+    if on_ramp is not None:
+        return on_ramp
 
     last = db.execute(
         select(Run).where(Run.project_id == project.id)
         .order_by(Run.created_at.desc()).limit(1)
     ).scalar_one_or_none()
-    routed = route(payload.get("text", ""), last_run_id=last.id if last else None)
+    routed = route(text, last_run_id=last.id if last else None)
     return {
         "intent": routed.intent, "confidence": routed.confidence, "tool": routed.tool,
         "arguments": routed.arguments, "explanation": routed.explanation,

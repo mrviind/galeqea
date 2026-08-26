@@ -72,6 +72,39 @@ def looks_like_url(text: str) -> bool:
     return find_url(text) is not None
 
 
+# "test my site / app / url" with no URL present — the ask-for-URL trigger.
+WANTS_TO_TEST = re.compile(
+    r"\b(test|smoke|check|try|scan|probe)\b.{0,30}\b"
+    r"(site|website|web ?app|app|application|url|page|link|something)\b",
+    re.IGNORECASE,
+)
+
+
+def preview(text: str) -> dict | None:
+    """The deterministic preview for the on-ramp, or None if this isn't one.
+
+    Mirrors what the orchestrator will actually do, so the composer's command
+    preview tells the truth: a URL (or "test my site") is handled with no model.
+    """
+    url = find_url(text)
+    if url:
+        target = normalize_url(url)
+        return {
+            "intent": "test a URL", "confidence": 1.0, "tool": "smoke_test_url",
+            "arguments": {"url": target},
+            "explanation": f"Open {target} in a real browser and check it loads — no model.",
+            "path": "router",
+        }
+    if WANTS_TO_TEST.search(text or ""):
+        return {
+            "intent": "test a URL", "confidence": 1.0, "tool": "smoke_test_url",
+            "arguments": {},
+            "explanation": "I'll ask which URL to test, then check it loads — no model.",
+            "path": "router",
+        }
+    return None
+
+
 def ensure_smoke_test(db: Session, project: Project) -> TestCase:
     """Get-or-create the project's built-in smoke probe.
 
@@ -173,14 +206,14 @@ def _report(db: Session, run: Run, target: str) -> dict:
     ok = status in {RunStatus.PASSED, RunStatus.FLAKY}
 
     if ok:
-        health = f"**{target}** is up and rendered."
+        health = f"{target} is up and rendered."
         if console:
-            health += f" ⚠️ {len(console)} console error(s) seen."
+            health += f" {len(console)} console error(s) seen."
         if network:
-            health += f" ⚠️ {len(network)} server (5xx) response(s)."
+            health += f" {len(network)} server (5xx) response(s)."
     else:
         reason = (rt.error_message if rt and rt.error_message else "the page did not load")
-        health = f"**{target}** did not pass the smoke check: {reason}"
+        health = f"{target} did not pass the smoke check: {reason}"
 
     return {
         "ok": ok,

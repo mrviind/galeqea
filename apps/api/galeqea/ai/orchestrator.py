@@ -19,7 +19,6 @@ end has to parse back apart.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -426,12 +425,6 @@ class Orchestrator:
     # ------------------------------------------------------------------ #
     # The first-run on-ramp: enter a URL, test it now. No model required.
     # ------------------------------------------------------------------ #
-    _WANTS_TO_TEST = re.compile(
-        r"\b(test|smoke|check|try|scan|probe)\b.{0,30}\b"
-        r"(site|website|web ?app|app|application|url|page|link|something)\b",
-        re.IGNORECASE,
-    )
-
     async def _resume_prompt(self, session, text, ctx, warnings) -> ChatReply | None:
         """If the chat is waiting on one answer (a URL), consume this message as it."""
         from ..services.onramp import find_url
@@ -458,12 +451,12 @@ class Orchestrator:
 
     async def _detect_onramp(self, session, text, ctx, warnings) -> ChatReply | None:
         """Spot a fresh 'test this URL' request, or ask for the URL if it's missing."""
-        from ..services.onramp import find_url
+        from ..services.onramp import WANTS_TO_TEST, find_url
 
         url = find_url(text)
         if url:
             return await self._run_onramp(session, url, ctx, warnings)
-        if self._WANTS_TO_TEST.search(text):
+        if WANTS_TO_TEST.search(text):
             set_prompt(session, slot="smoke_url", question="Which URL should I test?")
             return ChatReply(
                 text=("Sure — which URL should I test? Paste the full address, "
@@ -482,12 +475,18 @@ class Orchestrator:
             self.db, project_id=session.project_id, url=url, triggered_by=ctx.actor_id,
         )
         text = result.get("summary") or "Done."
-        suggestions: list[str] = []
+        # Suggestions are objects {label, text} — the shape the composer renders
+        # (a plain string leaves the chip with no label, just an arrow).
+        suggestions: list[dict] = []
         if result.get("ok"):
             text += ("\n\nThat's your first run — the target is set, so you can just say "
                      "\"run smoke\" again anytime. Want me to record a click-through and "
                      "turn it into a saved test?")
-            suggestions = ["record a test", "run smoke again", "what did you find?"]
+            suggestions = [
+                {"label": "Run smoke again", "text": "run smoke"},
+                {"label": "Record a test", "text": "How do I record a test?"},
+                {"label": "What's not tested?", "text": "what's not tested?"},
+            ]
         elif result.get("timed_out"):
             text = (f"I started testing {result.get('target')} (run #{result.get('run_number')}), "
                     "but it's taking a while — watch the run for the result.")
