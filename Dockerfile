@@ -15,7 +15,7 @@ RUN npm run build
 # The Playwright base image already carries the browsers and their system
 # libraries; installing those on a plain slim image is where most self-hosted
 # test platforms go wrong.
-FROM mcr.microsoft.com/playwright:v1.49.0-jammy
+FROM mcr.microsoft.com/playwright:v1.62.1-jammy
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
