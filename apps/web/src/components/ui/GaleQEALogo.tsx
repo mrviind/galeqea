@@ -15,8 +15,10 @@ import { Wind } from 'lucide-react';
  * rigour, which is the product in two words.
  */
 
-/** Electric teal — velocity. The only place this hue is used. */
-export const GALE_TEAL = '#00FFD5';
+/** Brand accent — a flat, modern blue, cohesive with the app's UI accent. */
+/** Brand accent — a warm, flat, professional orange against the navy ground. */
+/** Brand accent — a warm, flat golden yellow against the navy ground. */
+export const GALE_ACCENT = '#FFD60A';
 /** Deep navy — the geometric ground the mark sits on. */
 export const GALE_NAVY = '#0A192F';
 
@@ -54,7 +56,7 @@ export function GaleQEALogo({
           scale.box,
         )}
       >
-        <Wind size={scale.icon} color={GALE_TEAL} strokeWidth={2.25} aria-hidden="true" />
+        <Wind size={scale.icon} color={GALE_ACCENT} strokeWidth={2.25} aria-hidden="true" />
       </span>
 
       {showText && (
@@ -64,7 +66,7 @@ export function GaleQEALogo({
           </span>
           {/* No letter-space between the two halves: they read as one word, with
               the weight and slant change doing the separating. */}
-          <span className="font-extrabold not-italic tracking-tight text-[#00FFD5]">
+          <span className="font-extrabold not-italic tracking-tight text-[#FFD60A]">
             QEA
           </span>
         </span>
