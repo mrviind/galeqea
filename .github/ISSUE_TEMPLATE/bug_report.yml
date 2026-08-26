@@ -1,0 +1,79 @@
+name: Bug report
+description: Something is broken, wrong, or behaves differently than documented.
+labels: ["type/bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The two commands under **Diagnostics** below make
+        almost every bug actionable — please include them. For a security
+        vulnerability, stop here and follow [SECURITY.md](../blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see? Include the exact error text if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The chat command, the document you ingested, the run you triggered — enough for us to hit it too.
+      placeholder: |
+        1. Ingest requirements.pdf
+        2. In the chat box: "generate tests for checkout"
+        3. Approve the proposed tests
+        4. Run "the smoke tests" — observe …
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Operating mode
+      description: Which mode were you running in? (The default is No-AI.)
+      options:
+        - No-AI (default, fully offline)
+        - Local model (Ollama / local endpoint)
+        - API key (Anthropic / OpenAI / Gemini / Azure)
+        - BYO-Agent bridge (local claude CLI)
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which part of GaleQEA
+      options:
+        - Authoring / requirement ingestion
+        - Execution / runner
+        - Locator healing / App Model
+        - Agent / chat
+        - Approval gate
+        - MCP server
+        - Web UI
+        - Integrations (Jira, Xray, git, CI, …)
+        - Reporting / triage / RCA
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: "Paste the output of `galeqea version` and `galeqea doctor`. Include the run id if a run was involved."
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS and version, how you installed (make start / Docker), browser if relevant.
+    validations:
+      required: false

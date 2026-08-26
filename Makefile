@@ -19,8 +19,11 @@ setup: ## One-time setup: Python deps, Node deps, browsers, UI build
 	@echo ""
 	@echo "Setup complete. Start GaleQEA with:  make up"
 
+.PHONY: start
+start: setup up ## First run, one command: install everything, then launch on :8080
+
 .PHONY: up
-up: ## Start GaleQEA (API + UI + scheduler) on http://localhost:8080
+up: ## Start GaleQEA (API + UI + scheduler) on http://localhost:8080 (after `make start` once)
 	cd apps/api && PYTHONPATH=. ../../$(PY) -m galeqea.cli up
 
 .PHONY: dev

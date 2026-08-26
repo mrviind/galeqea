@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest a capability — within the testing/QE scope.
+labels: ["type/feature", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        GaleQEA is deliberately a **test-automation** tool. Requests are weighed
+        against that scope: authoring, execution, healing, coverage, triage,
+        reporting, and the integrations that serve them.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that GaleQEA makes hard or impossible today? Describe the problem, not your proposed patch.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like GaleQEA to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Part of the QA workflow
+      options:
+        - Authoring / requirement ingestion
+        - Execution / runner
+        - Locator healing / App Model
+        - Agent / chat
+        - Approval gate / governance
+        - MCP server
+        - Web UI
+        - Integrations (test management, Jira, git, CI, …)
+        - Reporting / triage / RCA
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This is a testing / quality-engineering capability, not a request to turn GaleQEA into a general project-management or non-testing tool.
+          required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+    validations:
+      required: false

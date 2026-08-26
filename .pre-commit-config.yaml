@@ -1,0 +1,27 @@
+# Run the same checks locally that CI runs, before a commit is made.
+#   pip install pre-commit && pre-commit install --hook-type commit-msg --hook-type pre-commit
+# Refresh pins with: pre-commit autoupdate
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff            # lint apps/api/galeqea, matching CI
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.30.0
+    hooks:
+      - id: commitizen      # enforce Conventional Commits on the message
+        stages: [commit-msg]

@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Email **security@galeqea.dev** with a description and reproduction steps. Please do
+Email **aravind3@gmail.com** with a description and reproduction steps. Please do
 not open a public issue. We aim to acknowledge within 3 working days.
 
 ## Threat model

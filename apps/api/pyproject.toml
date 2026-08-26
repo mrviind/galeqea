@@ -5,7 +5,7 @@ description = "GaleQEA - AI-first, local-first, open-source test automation plat
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
-authors = [{ name = "GaleQEA Contributors" }]
+authors = [{ name = "GaleQEA Contributors", email = "aravind3@gmail.com" }]
 dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",

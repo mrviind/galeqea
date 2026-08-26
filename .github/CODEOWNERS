@@ -1,0 +1,17 @@
+# CODEOWNERS routes review requests automatically by path.
+#
+# Solo maintainer for now — one default owner. GitHub resolves this email because
+# it is on the maintainer's GitHub account; swap in a @handle or @org/team as a
+# team forms, and uncomment the per-area lines to split ownership.
+
+# Default owner for everything:
+*                         aravind3@gmail.com
+
+# By area — mirrors apps/ and packages/ (uncomment and reassign when there's a team):
+# /apps/api/              aravind3@gmail.com   # Python / FastAPI backend, the gate, the agent
+# /apps/web/              aravind3@gmail.com   # React / Vite UI
+# /apps/runner/           aravind3@gmail.com   # Node / Playwright execution runner
+# /apps/api/galeqea/mcp/  aravind3@gmail.com   # MCP server + tools
+# /packages/plugin-sdk/   aravind3@gmail.com   # Plugin SDK
+# /docs/                  aravind3@gmail.com
+# /.github/               aravind3@gmail.com

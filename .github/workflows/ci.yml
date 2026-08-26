@@ -8,6 +8,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege by default; jobs that need more request it explicitly.
+permissions:
+  contents: read
+
 jobs:
   api:
     name: API · tests and lint
@@ -63,6 +67,9 @@ jobs:
     name: Human review gate on AI-assisted changes
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }

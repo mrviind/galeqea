@@ -13,6 +13,7 @@
 - [ ] `make test` passes
 - [ ] `make lint` passes
 - [ ] New behaviour has a test that would fail without the change
+- [ ] Commits are [Conventional Commits](../blob/main/CONTRIBUTING.md#commit-messages--conventional-commits) and signed off (`git commit -s`)
 
 ## AI assistance
 
