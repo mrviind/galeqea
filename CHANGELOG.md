@@ -12,6 +12,24 @@ Entries are grouped under **Added**, **Changed**, **Deprecated**, **Removed**,
 [Conventional Commits](https://www.conventionalcommits.org/), this file is intended
 to be generated from commit history at release time rather than hand-maintained.
 
+## [0.1.1](https://github.com/mrviind/qe-agent/compare/v0.1.0...v0.1.1) (2026-08-27)
+
+
+### Added
+
+* **agent:** first-run URL on-ramp with conversational slot-filling ([ebda38e](https://github.com/mrviind/qe-agent/commit/ebda38e26fbee06f39437554a785845f8883b7ba))
+* **integrations:** wire open_test_pull_request through the git.open_pr gate ([f6e8e35](https://github.com/mrviind/qe-agent/commit/f6e8e357714238f130392b0357727eacefedd8b2))
+* **web:** funky-yellow brand and wind-mark favicon ([b0bc022](https://github.com/mrviind/qe-agent/commit/b0bc0227560559f4736237fb01c4ea0c8867950d))
+
+
+### Fixed
+
+* **agent:** correct on-ramp chat rendering and command preview ([f2433ba](https://github.com/mrviind/qe-agent/commit/f2433baa9deee6296aec08bcc4dbf8d155001589))
+* **build:** add apps/api/README.md so a clean editable install succeeds ([27930a0](https://github.com/mrviind/qe-agent/commit/27930a0e86161283dcfe787f2dc65aae31415a03))
+* **build:** copy apps/api/README.md in the Docker image so the editable install works ([50dbcea](https://github.com/mrviind/qe-agent/commit/50dbceaba007c233b1d626f5899d009da95a2bfa))
+* **ci:** ignore major-version dependency bumps in Dependabot ([25f7054](https://github.com/mrviind/qe-agent/commit/25f70541ce30f73eba5ebb81fbd599f834fd8931))
+* **web:** stop the Copilot composer clipping its placeholder ([0289b48](https://github.com/mrviind/qe-agent/commit/0289b485c3a040ac3dae5b9e46fabb6dbab8be64))
+
 ## [Unreleased]
 
 ### Added
