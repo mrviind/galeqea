@@ -48,7 +48,7 @@ body:
   - type: dropdown
     id: component
     attributes:
-      label: Which part of GaleQEA
+      label: Which part of QE Agent
       options:
         - Authoring / requirement ingestion
         - Execution / runner

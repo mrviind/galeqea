@@ -1,4 +1,4 @@
-"""The invariants that make GaleQEA trustworthy.
+"""The invariants that make QE Agent trustworthy.
 
 If any test in this file fails, the product's central claim is false.
 """

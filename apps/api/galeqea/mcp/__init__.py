@@ -1,9 +1,9 @@
-"""QE tool pack for the Agent Copilot.
+"""QE tool pack for the agent.
 
 **This package does not own a tool registry, and that is deliberate.**
 
-GaleQEA already has one canonical registry in ``galeqea.ai.tools``. It is what
-the Copilot calls, what ``galeqea.mcp_server`` exposes to external MCP hosts
+QE Agent already has one canonical registry in ``galeqea.ai.tools``. It is what
+the agent calls, what ``galeqea.mcp_server`` exposes to external MCP hosts
 (Claude Code, Cursor, VS Code), what validates arguments against each schema, and
 what routes every state-changing call through the human approval gate.
 

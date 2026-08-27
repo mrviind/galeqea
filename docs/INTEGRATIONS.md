@@ -1,6 +1,6 @@
 # Test management integrations
 
-Where GaleQEA's test cases can go, what each system actually is underneath, and
+Where QE Agent's test cases can go, what each system actually is underneath, and
 what that means for the export.
 
 ---
@@ -8,7 +8,7 @@ what that means for the export.
 ## The shape that travels
 
 Every one of these tools is an implementation of the same structure — the one
-IEEE 829 defines and ISTQB adopted as its reference. GaleQEA stores that shape
+IEEE 829 defines and ISTQB adopted as its reference. QE Agent stores that shape
 natively, so exporting is a translation rather than a reconstruction:
 
 | Field | Meaning |
@@ -37,13 +37,13 @@ live in Jira's permission model, workflow and JQL, which is exactly what
 Jira-native teams want and exactly what makes bulk test management awkward.
 
 - **Auth:** `POST /api/v2/authenticate` with `{client_id, client_secret}` →
-  a 24-hour bearer token. The key pair does not expire; the token does. GaleQEA
+  a 24-hour bearer token. The key pair does not expire; the token does. QE Agent
   caches it with its expiry and refreshes 45 minutes early, so a long run cannot
   straddle the boundary.
 - **Create:** GraphQL `POST /api/v2/graphql`, `createTest` mutation, with native
   `steps { action data result }`.
 - **Gotcha:** GraphQL answers `200 OK` with an `errors` array. Treating that as
-  success is how an integration "successfully" pushes nothing — GaleQEA checks
+  success is how an integration "successfully" pushes nothing — QE Agent checks
   the array explicitly.
 - **Results:** already supported separately via `POST /api/v2/import/execution`.
 
@@ -104,7 +104,7 @@ matters when manual testers or contractors do not otherwise need Jira seats.
 | **Tricentis qTest** | Enterprise ALM, strong at scale | REST API is capable; no current demand and it needs a licensed instance to verify against |
 | **Qase** | Cleanest standalone UX | Straightforward REST API — the cheapest of these to add next |
 | **PractiTest** | Full ALM breadth | Broad surface; a partial integration would be worse than none |
-| **Jira alone (no test add-on)** | Very common in practice | GaleQEA already files Jira *issues*; a test case as a plain issue loses the step structure, so it is offered as a defect path rather than a test-management one |
+| **Jira alone (no test add-on)** | Very common in practice | QE Agent already files Jira *issues*; a test case as a plain issue loses the step structure, so it is offered as a defect path rather than a test-management one |
 
 Adding one is a single adapter in `apps/api/galeqea/integrations/testcases.py`:
 map `PortableTestCase` onto the target's shape and register it in `TARGETS`.

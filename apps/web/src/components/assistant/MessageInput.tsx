@@ -4,7 +4,7 @@ import { ArrowUp, Loader2, Terminal } from 'lucide-react';
 import { ModelSelector } from './ModelSelector';
 
 /**
- * The Copilot composer.
+ * The Assistant composer.
  *
  * The command preview above the box is the part worth keeping: before anything
  * is sent, the server says how it *would* route the sentence — deterministically
@@ -76,7 +76,7 @@ export function MessageInput({
               onSend();
             }
           }}
-          placeholder={disabled ? 'Select a project first' : 'Ask, or tell GaleQEA what to run…'}
+          placeholder={disabled ? 'Select a project first' : 'Ask, or tell QE Agent what to run…'}
           className="block max-h-[160px] min-h-[40px] w-full resize-none bg-transparent px-3 py-2.5 text-[12.5px] leading-normal text-ink placeholder:text-ink-3 focus:outline-none disabled:cursor-not-allowed"
         />
         <div className="flex items-center gap-2 border-t border-line px-1.5 py-1.5">

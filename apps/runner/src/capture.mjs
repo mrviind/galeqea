@@ -288,7 +288,7 @@ export const CAPTURE_SOURCE = `(() => {
         background:#111418;color:#e9edf2;border:1px solid #2a3038;border-radius:8px;
         padding:7px 11px;box-shadow:0 4px 14px rgba(0,0,0,.35);display:flex;gap:8px;align-items:center">
         <span style="width:7px;height:7px;border-radius:50%;background:#e5484d"></span>
-        <span>GaleQEA is recording — <b>Alt+click</b> to assert</span>
+        <span>QE Agent is recording — <b>Alt+click</b> to assert</span>
       </div>\`;
     document.body.appendChild(host);
   }

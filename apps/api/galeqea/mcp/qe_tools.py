@@ -1,4 +1,4 @@
-"""Quality-engineering tools the Copilot can call.
+"""Quality-engineering tools the agent can call.
 
 Both are deterministic. Neither needs a model to produce its output, which means
 they keep working in No-AI mode and their results are reproducible — a generated

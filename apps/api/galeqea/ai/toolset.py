@@ -98,7 +98,7 @@ def list_tests(args: dict, ctx: ToolContext) -> dict:
 
 # The QE tool pack registers into this same registry. Imported here rather than
 # at each call site so there is exactly one place that decides which packs are
-# installed, and so the MCP server and the Copilot can never see different sets.
+# installed, and so the MCP server and the agent can never see different sets.
 def _install_packs() -> None:
     from .. import mcp  # noqa: F401  (import registers query_requirements etc.)
 
@@ -833,7 +833,7 @@ def _apply_schedule(db, request: ApprovalRequest) -> dict:
     "create_jira_ticket",
     description=(
         "Propose creating a Jira issue from a finding, a failure or a coverage gap. "
-        "Use it when a defect needs tracking outside GaleQEA so that people who do "
+        "Use it when a defect needs tracking outside QE Agent so that people who do "
         "not use this tool can see it. Include the reproduction steps and the "
         "evidence in the body - a ticket that says only that a test failed wastes the "
         "triager's time. This writes to an external system, so it files an approval "
@@ -882,7 +882,7 @@ def _apply_jira(db, request: ApprovalRequest) -> dict:
     description=(
         "Open a pull request that adds the project's approved tests to the code "
         "repository as runnable files. Use it to get generated, human-approved "
-        "tests out of GaleQEA and into the codebase where they run in CI beside "
+        "tests out of QE Agent and into the codebase where they run in CI beside "
         "the application. It renders each approved test to a Playwright file, puts "
         "them on a new branch, and opens a PR against the default branch. Because "
         "a pull request writes to a repository other people review and merge, it "
@@ -995,9 +995,9 @@ def _apply_open_pr(db, request: ApprovalRequest) -> dict:
         ))
 
     branch = args.get("branch") or f"galeqea/tests-{date.today().isoformat()}"
-    title = args.get("title") or f"Add {len(changes)} GaleQEA test(s)"
+    title = args.get("title") or f"Add {len(changes)} QE Agent test(s)"
     body = args.get("body") or (
-        f"Adds {len(changes)} approved test(s) generated in GaleQEA and reviewed by a human.\n\n"
+        f"Adds {len(changes)} approved test(s) generated in QE Agent and reviewed by a human.\n\n"
         + "\n".join(f"- {c.message[6:]}" for c in changes)
     )
     result = open_pull_request(
@@ -1011,7 +1011,7 @@ def _apply_open_pr(db, request: ApprovalRequest) -> dict:
 @registry.register(
     "push_results_to_xray",
     description=(
-        "Publish run results to Xray as a test execution, mapping GaleQEA tests onto "
+        "Publish run results to Xray as a test execution, mapping QE Agent tests onto "
         "their Xray issue keys. Use it after a run when the results must appear in "
         "Jira as release evidence. Because this writes to an external system that "
         "other people read, it files an approval and returns its id rather than "
@@ -1049,7 +1049,7 @@ def _apply_xray(db, request: ApprovalRequest) -> dict:
     description=(
         "Export test cases to an external test-management system such as Xray, "
         "Zephyr, Azure DevOps or TestRail. Use it when the team's system of record "
-        "lives outside GaleQEA and the cases need to appear there. Each target has "
+        "lives outside QE Agent and the cases need to appear there. Each target has "
         "its own field mapping, and anything that cannot be mapped is reported rather "
         "than dropped silently. This writes to a system other people depend on, so it "
         "files an approval and returns its id instead of pushing immediately."

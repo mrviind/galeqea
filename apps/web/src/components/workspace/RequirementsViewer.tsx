@@ -19,7 +19,7 @@ export function RequirementsViewer() {
       <EmptyPane
         icon={<FileText size={18} />}
         title="Awaiting ingestion"
-        body="Ask the Copilot about a feature and its requirements land here. Try “what are the acceptance criteria for checkout?” — the agent queries the project rather than answering from memory."
+        body="Ask the agent about a feature and its requirements land here. Try “what are the acceptance criteria for checkout?” — the agent queries the project rather than answering from memory."
         hint={<>Nothing ingested yet? <Link to="/requirements" className="text-accent hover:underline">Upload a document</Link>.</>}
       />
     );

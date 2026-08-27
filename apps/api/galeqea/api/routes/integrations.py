@@ -29,7 +29,7 @@ PROVIDER_SPECS: dict[str, dict] = {
         "secrets": ["client_id", "client_secret"],
         "help": (
             "Xray → Global Settings → API Keys. The key pair does not expire; the "
-            "bearer token it issues lasts 24 hours and GaleQEA refreshes it for you."
+            "bearer token it issues lasts 24 hours and QE Agent refreshes it for you."
         ),
     },
     "zephyr_scale": {

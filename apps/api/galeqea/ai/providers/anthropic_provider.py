@@ -1,6 +1,6 @@
 """Anthropic provider, built on the official ``anthropic`` Python SDK.
 
-GaleQEA owns the agent loop rather than delegating to the SDK's beta tool
+QE Agent owns the agent loop rather than delegating to the SDK's beta tool
 runner, because the loop has to be identical across six providers and must stop
 at the approval gate and stream to the event bus between every turn. That is a
 control requirement the runner does not expose, so the manual loop is the right

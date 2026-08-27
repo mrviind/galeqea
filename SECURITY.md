@@ -7,7 +7,7 @@ not open a public issue. We aim to acknowledge within 3 working days.
 
 ## Threat model
 
-GaleQEA executes untrusted web content, ingests untrusted documents, holds
+QE Agent executes untrusted web content, ingests untrusted documents, holds
 credentials for external systems, and — optionally — sends content to a model. The
 design assumes each of those is hostile.
 
@@ -81,13 +81,13 @@ process; the `external` transport is reserved for that and is not yet implemente
 - Per-client rate limiting.
 - Strict schema validation with `additionalProperties: false`.
 
-## What GaleQEA does not do
+## What QE Agent does not do
 
 - **No telemetry.** Nothing is sent anywhere, by default or otherwise. There is no
   endpoint to disable.
 - **No outbound traffic in No-AI mode.** The default configuration makes no network
   calls at all.
-- **No credential proxying.** GaleQEA never routes a user's subscription credentials
+- **No credential proxying.** QE Agent never routes a user's subscription credentials
   through its own services.
 
 ## Hardening a deployment

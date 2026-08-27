@@ -13,7 +13,7 @@ node_modules/
 dist/
 .vite/
 
-# GaleQEA runtime data — never commit a local install's database or secrets
+# QE Agent runtime data — never commit a local install's database or secrets
 .galeqea/
 *.db
 *.db-wal

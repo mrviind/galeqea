@@ -1,4 +1,4 @@
-# Contributing to GaleQEA
+# Contributing to QE Agent
 
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). For where to ask questions vs. file bugs, see [SUPPORT.md](SUPPORT.md).
 
@@ -15,7 +15,7 @@ make dev        # API with reload on :8080, Vite on :5173
 
 ## The AI-code review gate
 
-GaleQEA is built with AI assistance, and it enforces on itself what it enforces on
+QE Agent is built with AI assistance, and it enforces on itself what it enforces on
 its users: **no AI-generated change reaches `main` without a human who read it.**
 
 - Mark AI-assisted commits: `Assisted-by: <tool>` in the trailer.

@@ -446,7 +446,7 @@ function ApiKeys({ keys, usage, onChange }: { keys: any[]; usage: any; onChange:
           <Empty
             icon={<KeyRound size={20} />}
             title="No keys stored"
-            body="GaleQEA runs fully without one. Add a key to enable requirement analysis, semantic healing, RCA ranking and model-driven exploration."
+            body="QE Agent runs fully without one. Add a key to enable requirement analysis, semantic healing, RCA ranking and model-driven exploration."
           />
         )}
         {keys.map((k) => (

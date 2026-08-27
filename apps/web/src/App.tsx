@@ -6,9 +6,9 @@ import {
   Settings as SettingsIcon, ShieldCheck, TestTube2, Wifi, WifiOff,
 } from 'lucide-react';
 import { useApp } from './state';
-import { AgentCopilot } from './components/copilot/AgentCopilot';
+import { AgentAssistant } from './components/assistant/AgentAssistant';
 import { Spinner } from './components/primitives';
-import { GaleQEALogo } from './components/ui/GaleQEALogo';
+import { QEAgentLogo } from './components/ui/QEAgentLogo';
 import Command from './pages/Command';
 import Runs from './pages/Runs';
 import RunDetail from './pages/RunDetail';
@@ -40,7 +40,7 @@ export default function App() {
     return (
       <div className="flex h-full items-center justify-center gap-3 text-ink-3">
         <Spinner className="text-accent" />
-        <span className="text-sm">Starting GaleQEA…</span>
+        <span className="text-sm">Starting QE Agent…</span>
       </div>
     );
   }
@@ -51,7 +51,7 @@ export default function App() {
         <div className="panel max-w-md space-y-3 p-6">
           <div className="flex items-center gap-2 text-fail">
             <AlertTriangle size={18} />
-            <h1 className="text-sm font-semibold">Cannot reach the GaleQEA API</h1>
+            <h1 className="text-sm font-semibold">Cannot reach the QE Agent API</h1>
           </div>
           <p className="text-xs leading-relaxed text-ink-2">{error}</p>
           <p className="text-xs leading-relaxed text-ink-3">
@@ -72,7 +72,7 @@ export default function App() {
       {/* ---- top bar --------------------------------------------------- */}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-3">
         <div className="flex items-center pr-1">
-          <GaleQEALogo size="sm" />
+          <QEAgentLogo size="sm" />
         </div>
 
         <div className="h-4 w-px bg-line" />
@@ -161,13 +161,13 @@ export default function App() {
           </Routes>
         </main>
 
-        {/* ---- right dock: the Agent Copilot ---------------------------- */}
-        {/* Persistent rather than routed: the Copilot is how work is commanded,
+        {/* ---- right dock: the Assistant ---------------------------- */}
+        {/* Persistent rather than routed: the agent is how work is commanded,
             so it has to stay put while the canvas beneath it changes. Sized as a
             share of the viewport with a floor and a ceiling — a fixed pixel
             width is either cramped on a laptop or absurd on an ultrawide. */}
         <aside className="hidden w-[32%] min-w-[340px] max-w-[520px] shrink-0 border-l border-line lg:block">
-          <AgentCopilot />
+          <AgentAssistant />
         </aside>
       </div>
     </div>

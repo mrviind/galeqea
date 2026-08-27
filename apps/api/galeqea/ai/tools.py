@@ -1,6 +1,6 @@
 """The capability surface.
 
-Every action GaleQEA can take is declared exactly once, here, with its schema,
+Every action QE Agent can take is declared exactly once, here, with its schema,
 its risk annotations and its handler. The chat agent and the MCP server are both
 thin adapters over this registry, which means an external MCP host (Claude Code,
 Cursor, VS Code) gets *precisely* the same capabilities, the same validation and

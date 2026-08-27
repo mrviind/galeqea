@@ -1,5 +1,5 @@
 /**
- * Session recording: a person drives the browser, GaleQEA writes the test.
+ * Session recording: a person drives the browser, QE Agent writes the test.
  *
  * The recorder produces *typed steps with locator ladders*, not code. That is
  * the whole reason it exists in this codebase rather than being delegated to

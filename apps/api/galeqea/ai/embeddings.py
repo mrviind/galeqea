@@ -2,7 +2,7 @@
 
 Semantic de-duplication, memory recall and element matching are *core* features,
 so they cannot depend on a model being configured. When no provider offers
-embeddings, GaleQEA falls back to a hashed character n-gram encoder: it is not
+embeddings, QE Agent falls back to a hashed character n-gram encoder: it is not
 as good as a learned model at paraphrase, but it is deterministic, instant,
 offline, and good enough to catch the near-duplicate test cases and repeated
 failure signatures that matter most in practice.

@@ -114,7 +114,7 @@ def extract(data: bytes, filename: str, mime_type: str = "") -> ExtractedDoc:
             mime_type=mime_type or "image/*",
             warnings=[
                 "Image documents need OCR. Install `pytesseract` and Tesseract, or paste "
-                "the text directly - GaleQEA will not silently ingest an empty document."
+                "the text directly - QE Agent will not silently ingest an empty document."
             ],
         )
     try:

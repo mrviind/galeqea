@@ -1,7 +1,7 @@
 """Prompt-injection defence and untrusted-content isolation.
 
 The threat is concrete: a requirement PDF, a page under test, a CI log or a Jira
-comment can all contain text engineered to look like an instruction. GaleQEA
+comment can all contain text engineered to look like an instruction. QE Agent
 treats every one of those as *data*, never as instruction, and enforces that in
 three ways:
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * GaleQEA Playwright runner.
+ * QE Agent Playwright runner.
  *
  * Reads an execution plan (JSON) and streams NDJSON events. Deliberately has no
  * knowledge of databases, models or approval rules - it executes steps, reports

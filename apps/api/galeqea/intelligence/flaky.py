@@ -1,7 +1,7 @@
 """Flaky-test detection.
 
 Re-running a test 10,000 times is the gold standard and is useless in practice.
-GaleQEA instead scores flakiness from evidence CI already produces, and is
+QE Agent instead scores flakiness from evidence CI already produces, and is
 explicit about how much it trusts that evidence.
 
 Signals, strongest first:

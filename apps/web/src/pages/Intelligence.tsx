@@ -141,7 +141,7 @@ export default function Intelligence() {
               <Empty
                 icon={<Wrench size={20} />}
                 title="No heals waiting"
-                body="When a locator breaks, GaleQEA re-identifies the element and proposes the fix here with its evidence."
+                body="When a locator breaks, QE Agent re-identifies the element and proposes the fix here with its evidence."
               />
             )}
             {heals.map((heal) => (
@@ -229,7 +229,7 @@ export default function Intelligence() {
                 <Empty
                   icon={<Boxes size={20} />}
                   title="No app model yet"
-                  body="Run a test and this fills itself in. GaleQEA records every screen and element a run touches, so healing repairs an element once — for every test that uses it."
+                  body="Run a test and this fills itself in. QE Agent records every screen and element a run touches, so healing repairs an element once — for every test that uses it."
                 />
               )}
               {(appModel.screens ?? []).map((screen: any) => (

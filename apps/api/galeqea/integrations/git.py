@@ -1,6 +1,6 @@
 """Git provider integrations.
 
-GaleQEA proposes script changes as *pull requests*, never as direct commits to a
+QE Agent proposes script changes as *pull requests*, never as direct commits to a
 default branch. That is not a limitation - it is the same principle as the
 approval gate applied to code: the diff goes where the team already reviews
 diffs, in their own tooling, with their own required checks.

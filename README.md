@@ -1,6 +1,6 @@
 <div align="center">
 
-# GaleQEA
+# QE Agent
 
 **AI-first, local-first, open-source test automation.**
 
@@ -18,13 +18,13 @@ approval gate. The AI can never approve its own output.
 
 ## What makes this different
 
-Most "AI testing tools" are a model wrapped around a script runner. GaleQEA makes
+Most "AI testing tools" are a model wrapped around a script runner. QE Agent makes
 five choices that change what the product can actually do:
 
 | | Choice | Why it matters |
 |---|---|---|
 | **1** | **Tests are data, not code** | A test is an ordered list of typed steps, each carrying a *semantic intent* and a locator ladder. That is what makes healing durable, replay deterministic, and export to Playwright/pytest/Robot/Gherkin a rendering problem instead of a rewrite. |
-| **2** | **A persistent App Model** | GaleQEA maintains a digital twin of the application: screens, elements, and their locator history, **learned automatically from ordinary runs**. Heal an element **once** and every test that references it is repaired at the same moment — instead of patching the same button in forty tests, forty times. |
+| **2** | **A persistent App Model** | QE Agent maintains a digital twin of the application: screens, elements, and their locator history, **learned automatically from ordinary runs**. Heal an element **once** and every test that references it is repaired at the same moment — instead of patching the same button in forty tests, forty times. |
 | **3** | **Healing is tiered and mostly free** | Cached locator → deterministic fingerprint scoring → semantic re-resolution by a model, in that order. A healthy suite never pays for healing, and healing works with **no model at all**. |
 | **4** | **The gate is structural** | An agent cannot write. It files an approval request carrying a reviewable diff and its evidence. `SelfApprovalError` is raised in code — not enforced by a setting you could turn off. |
 | **5** | **No-AI mode is the default** | Authoring, execution, scheduling, reporting, flake detection, regression triage, RCA and locator healing all work with zero LLM calls and zero outbound network traffic. |
@@ -39,11 +39,11 @@ dependencies, downloads a Chromium, builds the UI, and launches on
 **http://localhost:8080**.
 
 ```bash
-git clone https://github.com/mrviind/galeqea && cd galeqea && make start
+git clone https://github.com/mrviind/qe-agent && cd qe-agent && make start
 ```
 
 `make start` is the first-run command. Every run after that is just `make up`
-(it skips the install). No API key is required — GaleQEA is **fully offline by
+(it skips the install). No API key is required — QE Agent is **fully offline by
 default** (see [No-AI mode](#no-ai-mode-is-the-default)).
 
 Then, in the chat box, point it at anything you want to test:
@@ -52,7 +52,7 @@ Then, in the chat box, point it at anything you want to test:
 test https://your-app.com
 ```
 
-GaleQEA opens it in a real browser, checks it loads cleanly, and sets it as your
+QE Agent opens it in a real browser, checks it loads cleanly, and sets it as your
 target — **no model, no setup, no test to write first.** Just say `test my site`
 and it'll ask you for the URL. That's the on-ramp; from there everything else is a
 sentence away:
@@ -189,13 +189,13 @@ A model, when configured, deepens this; it can never drop a requirement.
 </details>
 
 <details>
-<summary><b>Session recording — a person drives, GaleQEA writes the test</b></summary>
+<summary><b>Session recording — a person drives, QE Agent writes the test</b></summary>
 
 A headed browser opens; use the application as a tester would; close it. What
 comes out is **typed step data with a locator ladder**, not a code file.
 
 `playwright codegen` writes source that is frozen the moment it is written. A
-recorded GaleQEA test binds every element it touched into the App Model *as it is
+recorded QE Agent test binds every element it touched into the App Model *as it is
 touched*, so it is repairable before it has ever been run — heal the element once
 and every test referencing it follows.
 
@@ -280,7 +280,7 @@ Each kind also knows how it can be wrong, with the reason a reviewer needs.
 
 Pixel diffing produces a red rectangle and a shrug — it cannot tell a font
 hinting change from a missing checkout button, so teams learn to mute it.
-GaleQEA compares three layers and only escalates when the cheap ones disagree:
+QE Agent compares three layers and only escalates when the cheap ones disagree:
 
 1. **Structural** — diff the accessibility snapshots. Catches a vanished
    control, a renamed heading, changed body copy. Deterministic, offline, and
@@ -375,7 +375,7 @@ Plan-Act-Verify loop and reports findings a human triages.
 <summary><b>Integrations & extensibility</b></summary>
 
 - **Test management** — push approved cases to **Xray**, **Zephyr Scale**,
-  **Azure DevOps Test Plans** or **TestRail**. GaleQEA stores tests in the
+  **Azure DevOps Test Plans** or **TestRail**. QE Agent stores tests in the
   IEEE 829 shape all four implement, so export is translation, not
   reconstruction. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 - **Jira** (REST v3) and **Xray Cloud** — including the 24-hour bearer-token refresh
@@ -383,7 +383,7 @@ Plan-Act-Verify loop and reports findings a human triages.
 - **CI** — Jenkins, GitHub Actions, GitLab CI, Azure DevOps, plus direct upload of
   JUnit / Playwright / Allure reports for air-gapped installs.
 - **Git** — GitHub, GitLab, Bitbucket. Ask the chat to
-  `open a pull request with the approved checkout tests` and GaleQEA renders each
+  `open a pull request with the approved checkout tests` and QE Agent renders each
   approved test to a Playwright file and opens a **pull request** — never a direct
   commit, and only after the `git.open_pr` approval is granted. The AI proposes the
   PR; a human lets it out.
@@ -398,7 +398,7 @@ Plan-Act-Verify loop and reports findings a human triages.
 
 ## No-AI mode is the default
 
-GaleQEA boots with `GALEQEA_AI_MODE=no_ai`: **zero LLM calls, zero outbound network
+QE Agent boots with `GALEQEA_AI_MODE=no_ai`: **zero LLM calls, zero outbound network
 traffic.** What still works:
 
 - Plain-English commands (`run …`, `rerun only failed`, `schedule … nightly at 2am`)
@@ -416,7 +416,7 @@ so plainly instead of degrading into a silent stub.
 
 ## Claude subscriptions
 
-If you hold a Claude Pro or Max subscription, you may reasonably ask whether GaleQEA
+If you hold a Claude Pro or Max subscription, you may reasonably ask whether QE Agent
 can use it. **It cannot, and neither can any other third-party product.** Anthropic's
 Claude Code legal and compliance documentation (updated 20 February 2026, enforced
 from 4 April 2026) states that using OAuth tokens obtained through Claude Free, Pro
@@ -425,14 +425,14 @@ not permitted, and that Anthropic does not permit third-party developers to offe
 Claude.ai login in their own applications or to route requests through Free/Pro/Max
 credentials on behalf of users.
 
-GaleQEA's answer is to never touch those credentials at all. The **BYO-Agent bridge**
+QE Agent's answer is to never touch those credentials at all. The **BYO-Agent bridge**
 shells out to the `claude` binary *you* installed and authenticated on your own
 machine, exactly as if you had typed the command. Three guardrails enforce that:
 
 1. It refuses to run unless the server is bound to a loopback address, so a hosted
-   GaleQEA cannot use someone's local subscription by proxy.
+   QE Agent cannot use someone's local subscription by proxy.
 2. The subprocess environment is scrubbed of every Anthropic credential variable
-   GaleQEA itself might hold.
+   QE Agent itself might hold.
 3. Every invocation is written to the audit ledger.
 
 Cloud and SaaS deployments default to API-key authentication, where this question
@@ -466,9 +466,9 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) for the design decisions and their reaso
 | | |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Design decisions, and why each one was made |
-| [docs/MCP.md](docs/MCP.md) | Using GaleQEA from Claude Code, Cursor or VS Code |
+| [docs/MCP.md](docs/MCP.md) | Using QE Agent from Claude Code, Cursor or VS Code |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | Writing a plugin |
-| [docs/CI.md](docs/CI.md) | Running GaleQEA in CI |
+| [docs/CI.md](docs/CI.md) | Running QE Agent in CI |
 | [docs/AI.md](docs/AI.md) | How requirements become tests, and bring-your-own-key |
 | [docs/AUTHORING.md](docs/AUTHORING.md) | Session recording, API specification import, synthetic test data |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Exporting test cases to Xray, Zephyr, Azure DevOps, TestRail |

@@ -1,6 +1,6 @@
 # Authoring tests without writing them
 
-GaleQEA has four ways into a test suite. All four end in the same place — a
+QE Agent has four ways into a test suite. All four end in the same place — a
 `PROPOSED` test case waiting for a human — because the approval gate does not
 make exceptions for the route a proposal arrived by.
 
@@ -20,7 +20,7 @@ This document covers the middle two.
 *Author → Record a session.*
 
 A headed browser opens. Use the application the way a tester would. Close the
-window when you are done, and GaleQEA compiles what it saw into a step list.
+window when you are done, and QE Agent compiles what it saw into a step list.
 
 ### What makes this different from `playwright codegen`
 
@@ -28,7 +28,7 @@ Codegen writes a **code file**. The moment it is written it is frozen: the
 selectors it chose are the selectors it will use forever, and repairing it means
 editing source.
 
-GaleQEA records **typed step data with a locator ladder**. That difference is
+QE Agent records **typed step data with a locator ladder**. That difference is
 what everything else hangs off:
 
 - every element is bound into the [App Model](../ARCHITECTURE.md) as it is
@@ -64,7 +64,7 @@ digit is skipped, because an order number or a total changes every run and
 asserting it guarantees a false failure.
 
 A recording with no Alt+clicks produces a test that proves the flow completes
-without an error, not that it produced the right result. GaleQEA says so in the
+without an error, not that it produced the right result. QE Agent says so in the
 proposal's rationale rather than inventing assertions to fill the gap.
 
 ### Credentials are never captured

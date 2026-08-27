@@ -1,6 +1,6 @@
 """The agent loop.
 
-Owned by GaleQEA rather than delegated to a provider SDK, because the loop must
+Owned by QE Agent rather than delegated to a provider SDK, because the loop must
 be identical across every provider and must pause at three points the SDK
 runners do not expose: the approval gate, the event stream, and the token
 budget. Each iteration emits a timestamped status the chat UI renders live, so

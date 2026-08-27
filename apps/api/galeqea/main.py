@@ -1,4 +1,4 @@
-"""GaleQEA API application."""
+"""QE Agent API application."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     loaded = scheduler.load_all()
     scheduler.start()
     log.info(
-        "GaleQEA %s ready — mode=%s provider=%s db=%s schedules=%d",
+        "QE Agent %s ready — mode=%s provider=%s db=%s schedules=%d",
         __version__, settings.ai_mode.value, settings.provider,
         settings.database_url.split("///")[-1], loaded,
     )
@@ -59,7 +59,7 @@ def _bootstrap() -> None:
             # A machine principal exists so agent-authored records have a real
             # actor id - and it can never satisfy an approval gate.
             db.add(User(
-                email="agent@galeqea.local", name="GaleQEA Agent",
+                email="agent@galeqea.local", name="QE Agent",
                 role=Role.AGENT, is_machine=True,
             ))
         if db.execute(select(Project).limit(1)).scalar_one_or_none() is None:
@@ -73,7 +73,7 @@ def _bootstrap() -> None:
 
 
 app = FastAPI(
-    title="GaleQEA",
+    title="QE Agent",
     version=__version__,
     description=(
         "AI-first, local-first, open-source test automation. Every write passes a "

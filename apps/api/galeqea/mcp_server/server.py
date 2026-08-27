@@ -1,6 +1,6 @@
-"""GaleQEA's MCP server.
+"""QE Agent's MCP server.
 
-GaleQEA is MCP-first: the same registry that backs the built-in chat is exposed
+QE Agent is MCP-first: the same registry that backs the built-in chat is exposed
 here, so an external host (Claude Code, Cursor, VS Code) gets exactly the same
 capabilities, the same schema validation and the same approval gate. There is no
 "reduced MCP subset" to drift out of sync with the product.
@@ -195,7 +195,7 @@ async def call_tool(
         )
         result = await registry.invoke(name, arguments, ctx)
 
-    # `_ui` drives GaleQEA's own workspace panes and means nothing to an external
+    # `_ui` drives QE Agent's own workspace panes and means nothing to an external
     # MCP client. It is also a duplicate of data already in the result, so sending
     # it would both confuse the consumer and violate the declared outputSchema's
     # intent. Stripped at the boundary, in one place.
@@ -293,7 +293,7 @@ def server_info() -> dict:
             "prompts": {"listChanged": False},
         },
         "instructions": (
-            "GaleQEA exposes an AI-driven test automation platform. Read-only tools "
+            "QE Agent exposes an AI-driven test automation platform. Read-only tools "
             "return data immediately. Every state-changing tool files a human approval "
             "request and returns its id - it does not perform the change. Confirm with "
             "the user before calling any tool whose annotations mark it destructive or "

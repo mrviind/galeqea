@@ -45,7 +45,7 @@ def _load(provider: str):
     return cls
 
 
-#: What the Copilot's model picker offers per provider.
+#: What the agent's model picker offers per provider.
 #:
 #: A curated list rather than a live query, because the picker must render
 #: instantly and must work in No-AI mode with no network at all. It is a
@@ -174,7 +174,7 @@ def for_project(db, project_id: str | None) -> LLMProvider:
 def for_selection(db, project_id: str | None, provider: str | None, model: str | None) -> LLMProvider:
     """Build a provider for a model the *client* chose.
 
-    This is the server half of the Copilot's model picker, and the reason the
+    This is the server half of the agent's model picker, and the reason the
     picker is safe to expose in a browser at all. The client sends two strings —
     a provider name and a model id. Neither is a credential. The key is unsealed
     from the vault here, on the server, and never travels in either direction.
@@ -251,7 +251,7 @@ def describe_modes() -> list[dict]:
             "label": "Local / offline model",
             "description": (
                 "Ollama or any OpenAI-compatible endpoint. Nothing leaves the "
-                "machine, so GaleQEA runs fully air-gapped."
+                "machine, so QE Agent runs fully air-gapped."
             ),
             "requires": ["base_url", "model"],
             "providers": ["ollama", "openai_compatible"],
@@ -261,7 +261,7 @@ def describe_modes() -> list[dict]:
             "label": "Local Claude Code bridge",
             "description": (
                 "Shells out to the Claude Code CLI you installed and authenticated "
-                "yourself. GaleQEA never sees, stores or forwards those credentials, "
+                "yourself. QE Agent never sees, stores or forwards those credentials, "
                 "and this mode is unavailable on non-loopback deployments."
             ),
             "requires": ["claude CLI on PATH"],

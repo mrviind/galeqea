@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "GaleQEA Playwright execution engine",
+  "description": "QE Agent Playwright execution engine",
   "license": "Apache-2.0",
   "bin": { "galeqea-runner": "./src/cli.mjs" },
   "scripts": {

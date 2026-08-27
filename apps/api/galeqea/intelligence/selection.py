@@ -1,7 +1,7 @@
 """Predictive test selection / test-impact analysis.
 
 Running the whole suite on every change is honest but slow; running a hand-tagged
-"smoke" set is fast but arbitrary. GaleQEA scores every test against the actual
+"smoke" set is fast but arbitrary. QE Agent scores every test against the actual
 change and runs the highest-value subset, then *reports what it skipped and why*
 - a selector that silently drops coverage is worse than no selector at all.
 

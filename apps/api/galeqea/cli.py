@@ -1,4 +1,4 @@
-"""GaleQEA command line.
+"""QE Agent command line.
 
 ``galeqea up`` is the whole getting-started story: it initialises storage,
 checks the runner, and serves the API and the built UI from one process on one
@@ -36,7 +36,7 @@ def up(
     port: int = typer.Option(settings.port, help="Port to serve on."),
     reload: bool = typer.Option(False, help="Auto-reload on code changes (development)."),
 ) -> None:
-    """Start GaleQEA: API, UI and scheduler in one process."""
+    """Start QE Agent: API, UI and scheduler in one process."""
     import uvicorn
 
     from .db import init_db
@@ -45,7 +45,7 @@ def up(
     _preflight()
     console.print(
         Panel.fit(
-            f"[bold]GaleQEA {__version__}[/bold]\n"
+            f"[bold]QE Agent {__version__}[/bold]\n"
             f"[dim]open[/dim] http://{host}:{port}\n"
             f"[dim]mode[/dim] {settings.ai_mode.value}"
             f"{'' if settings.ai_enabled else '  (every core feature works without a model)'}\n"
@@ -61,7 +61,7 @@ def up(
 
 @app.command()
 def doctor() -> None:
-    """Check that everything GaleQEA needs is present, and say what to do if not."""
+    """Check that everything QE Agent needs is present, and say what to do if not."""
     table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
     for column in ("Check", "Status", "Detail"):
         table.add_column(column)
@@ -74,7 +74,7 @@ def doctor() -> None:
     console.print(table)
     if not ok:
         console.print("\n[yellow]Some optional capabilities are unavailable.[/yellow] "
-                      "GaleQEA still runs — the affected features are disabled, not broken.")
+                      "QE Agent still runs — the affected features are disabled, not broken.")
     raise typer.Exit(0)
 
 
@@ -180,7 +180,7 @@ def export(
     project: str = typer.Option("", help="Project id or key."),
     out: Path | None = typer.Option(None, help="Write to a file instead of stdout."),
 ) -> None:
-    """Export a stored test as runnable source with no GaleQEA dependency."""
+    """Export a stored test as runnable source with no QE Agent dependency."""
     from .ai.toolset import _lookup_test
     from .db import init_db, session_scope
     from .engine.codegen import render
@@ -279,7 +279,7 @@ def plugins(
 @app.command()
 def version() -> None:
     """Print the version."""
-    console.print(f"GaleQEA {__version__}")
+    console.print(f"QE Agent {__version__}")
 
 
 # --------------------------------------------------------------------------- #

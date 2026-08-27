@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to GaleQEA are documented here.
+All notable changes to QE Agent are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -16,7 +16,7 @@ to be generated from commit history at release time rather than hand-maintained.
 
 ### Added
 - First-run on-ramp: type a URL in the chat (`test https://your-app.com`) and
-  GaleQEA drives a real browser to it, checks it loads cleanly, and sets it as the
+  QE Agent drives a real browser to it, checks it loads cleanly, and sets it as the
   project target — with **no model and no test authoring**. If the URL is missing
   (`test my site`), the chat asks for it and uses the answer (conversational
   slot-filling). Built on the existing run pipeline via a built-in smoke probe that,
@@ -43,5 +43,5 @@ to be generated from commit history at release time rather than hand-maintained.
   audit ledger, a No-AI default mode, and an MCP server exposing the same tool
   registry that powers the built-in chat.
 
-[Unreleased]: https://github.com/mrviind/galeqea/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/mrviind/galeqea/releases/tag/v0.1.0
+[Unreleased]: https://github.com/mrviind/qe-agent/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/mrviind/qe-agent/releases/tag/v0.1.0

@@ -7,7 +7,7 @@ import typescript from 'highlight.js/lib/languages/typescript';
  * Syntax highlighting, registering only the languages actually rendered.
  *
  * `highlight.js/lib/core` plus three grammars is a fraction of the full
- * bundle, which ships close to two hundred languages GaleQEA will never show.
+ * bundle, which ships close to two hundred languages QE Agent will never show.
  * The theme comes from the app's own tokens in `styles/index.css`, so a code
  * block stays legible in both themes instead of carrying a stylesheet that
  * assumes one.

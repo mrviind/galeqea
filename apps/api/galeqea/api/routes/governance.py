@@ -379,7 +379,7 @@ def list_models(
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
-    """Models the Copilot may select, resolved from the server-side vault.
+    """Models the agent may select, resolved from the server-side vault.
 
     This is what makes a model picker safe to put in a browser on an enterprise
     deployment. The client never learns a key and never holds one: it asks which

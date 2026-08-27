@@ -1,4 +1,4 @@
-# GaleQEA — single-image deployment.
+# QE Agent — single-image deployment.
 #
 # The UI is built in one stage and served by the API in the final image, so a
 # deployment is one container on one port with no reverse proxy to configure.

@@ -72,7 +72,7 @@ def verify(db: Session, *, project_id: str) -> dict:
         "token_expires_at": (connection.record.token_cache or {}).get("expires_at"),
         "note": (
             "The API key pair does not expire; this bearer token does, after 24 hours. "
-            "GaleQEA caches and refreshes it automatically."
+            "QE Agent caches and refreshes it automatically."
         ),
         "token_prefix": token[:8] + "…",
     }
@@ -112,7 +112,7 @@ def push_results(db: Session, *, project_id: str, run_id: str, test_plan_key: st
     }
     payload = {
         "info": {
-            "summary": f"GaleQEA run #{run.number} — {run.title}",
+            "summary": f"QE Agent run #{run.number} — {run.title}",
             "description": (run.triage or {}).get("headline", ""),
             "startDate": run.started_at.isoformat() if run.started_at else utcnow().isoformat(),
             "finishDate": run.finished_at.isoformat() if run.finished_at else utcnow().isoformat(),

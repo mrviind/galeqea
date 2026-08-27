@@ -2,7 +2,7 @@
 
 Pixel diffing produces a red rectangle and a shrug: it cannot tell a font
 hinting change from a missing checkout button, so teams learn to ignore it.
-GaleQEA compares three layers and only escalates when the cheap ones disagree:
+QE Agent compares three layers and only escalates when the cheap ones disagree:
 
 1. **Structural** - diff the accessibility snapshots. Catches a vanished button,
    a renamed heading, a control that lost its label. Deterministic, offline, and

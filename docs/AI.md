@@ -1,4 +1,4 @@
-# How GaleQEA analyses requirements — and how to plug in your own key
+# How QE Agent analyses requirements — and how to plug in your own key
 
 ## The part that does not need AI
 
@@ -10,7 +10,7 @@ input domain is known — which the requirement usually states outright:
 > The order status must be **one of Draft, Submitted or Approved**.
 > The system shall **reject an upload of more than 5 MB**.
 
-So GaleQEA parses the domain by rule and applies the classical techniques to it:
+So QE Agent parses the domain by rule and applies the classical techniques to it:
 
 | Technique | What it produces |
 |---|---|
@@ -30,7 +30,7 @@ suggested 65"*. The first can be judged; the second can only be trusted.
 ### Where wording is ambiguous, it says so
 
 "The order status must be one of Draft, Submitted or Approved" does not say
-whether matching is case sensitive. GaleQEA marks `draft` as **unspecified**
+whether matching is case sensitive. QE Agent marks `draft` as **unspecified**
 rather than invalid, and raises it as a question. Asserting a verdict the
 specification never gave bakes a guess into a test, and the guess then reads as
 agreed behaviour forever after.
@@ -63,7 +63,7 @@ exactly like success.
 
 ## Bring your own key
 
-GaleQEA never proxies your traffic. The key is yours, the request goes straight
+QE Agent never proxies your traffic. The key is yours, the request goes straight
 to your provider, and nothing about it reaches anyone else.
 
 ### It is stored, not remembered
@@ -94,7 +94,7 @@ provider — with different models, endpoints and budgets.
 An optional monthly cap is enforced from the usage ledger **before** a request
 is made. A budget you discover you have exceeded is a bill.
 
-When a cap is reached, GaleQEA degrades to No-AI mode rather than failing the
+When a cap is reached, QE Agent degrades to No-AI mode rather than failing the
 run — and says why:
 
 > the monthly budget for openai_compatible ($5.00) is spent ($6.20 so far).
@@ -116,7 +116,7 @@ Anthropic · OpenAI · Google Gemini · Azure OpenAI · Ollama · any
 OpenAI-compatible endpoint · the local Claude Code bridge.
 
 For the Claude Code bridge, no key is stored at all: it shells out to the CLI you
-authenticated yourself, and GaleQEA is barred from using it on a non-loopback
+authenticated yourself, and QE Agent is barred from using it on a non-loopback
 deployment. See the README on why that boundary exists.
 
 ---

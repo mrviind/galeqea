@@ -1,6 +1,6 @@
 """The No-AI provider - the default.
 
-GaleQEA's core is a complete test platform without a model: authoring, running,
+QE Agent's core is a complete test platform without a model: authoring, running,
 scheduling, reporting, deterministic locator healing, statistical flake
 detection, failure-signature triage and manual RCA all work here. This provider
 exists so that AI-only paths fail *loudly and usefully* rather than degrading
@@ -12,7 +12,7 @@ from __future__ import annotations
 from .base import Completion, LLMProvider, Message, NoAIModeError, ToolSpec
 
 MESSAGE = (
-    "GaleQEA is running in No-AI mode, so this action needs a model that is not "
+    "QE Agent is running in No-AI mode, so this action needs a model that is not "
     "configured. Everything that does not require a model still works - authoring, "
     "running, scheduling, reporting, rule-based healing and failure triage. "
     "To enable AI features open Settings → Model and choose one of: an API key for "

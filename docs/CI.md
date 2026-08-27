@@ -1,6 +1,6 @@
-# Running GaleQEA in CI
+# Running QE Agent in CI
 
-GaleQEA exits non-zero when a run fails, so it drops into any pipeline.
+QE Agent exits non-zero when a run fails, so it drops into any pipeline.
 
 ## Basic
 
@@ -51,6 +51,6 @@ Worth running on a schedule if you rely on the ledger for compliance:
 
 ## The AI-code review gate
 
-GaleQEA's own pipeline enforces on itself what the product enforces on its users:
+QE Agent's own pipeline enforces on itself what the product enforces on its users:
 any commit touching generated or AI-assisted code requires human review before
 merge. See `.github/workflows/ci.yml` and [CONTRIBUTING.md](../CONTRIBUTING.md).

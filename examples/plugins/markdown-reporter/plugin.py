@@ -1,4 +1,4 @@
-"""A worked example of a GaleQEA reporter plugin.
+"""A worked example of a QE Agent reporter plugin.
 
 Demonstrates the three things every plugin should do:
 

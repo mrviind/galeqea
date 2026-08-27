@@ -1,4 +1,4 @@
-<!-- GaleQEA mark. Monochrome by design: in a test tool colour carries meaning
+<!-- QE Agent mark. Monochrome by design: in a test tool colour carries meaning
      (pass / fail / flaky), so the brand must never compete with it.
      `currentColor` so it inherits wherever it is placed. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor">

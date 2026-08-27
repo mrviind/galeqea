@@ -303,7 +303,7 @@ class Orchestrator:
             clear_plan(session)
 
         # The first-run on-ramp: a URL in the message (or an explicit "test my
-        # site") means the user wants to point GaleQEA at something and test it
+        # site") means the user wants to point QE Agent at something and test it
         # right now. This works with no model, so a fresh user is never stuck.
         onramp = await self._detect_onramp(session, text, ctx, warnings)
         if onramp is not None:
@@ -335,7 +335,7 @@ class Orchestrator:
             return ChatReply(
                 text=(
                     "I couldn't match that to an action I can take without a model, and "
-                    "GaleQEA is currently in No-AI mode.\n\n"
+                    "QE Agent is currently in No-AI mode.\n\n"
                     "Things I can still do right now: run tests (\"run the smoke tests on "
                     "staging\"), re-run failures, schedule runs, list tests, show coverage "
                     "gaps, score flaky tests, and explain a failure from its evidence.\n\n"

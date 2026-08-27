@@ -1,6 +1,6 @@
 """Agile ceremonies for quality engineering, driven from chat.
 
-These tools run the four Scrum ceremonies over the one thing GaleQEA actually
+These tools run the four Scrum ceremonies over the one thing QE Agent actually
 knows about: test coverage of requirements. They are not a general project
 manager — there are no people, story assignments or Jira sprints here. A
 "sprint" is a batch of requirements a team commits to *covering with tests*, and

@@ -1,6 +1,6 @@
 """Runtime configuration.
 
-GaleQEA is local-first: every setting has a working default that requires no
+QE Agent is local-first: every setting has a working default that requires no
 cloud service, no API key and no outbound network access. The platform boots
 in ``NO_AI`` mode unless a model provider is explicitly configured.
 """

@@ -1,4 +1,4 @@
-# GaleQEA brand
+# QE Agent brand
 
 ## The mark
 

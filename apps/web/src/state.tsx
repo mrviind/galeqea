@@ -48,7 +48,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const stored = localStorage.getItem('galeqea.project');
         setProject(list.find((p) => p.id === stored) ?? list[0] ?? null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'could not reach the GaleQEA API');
+        setError(err instanceof Error ? err.message : 'could not reach the QE Agent API');
       } finally {
         setLoading(false);
       }

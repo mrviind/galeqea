@@ -8,7 +8,7 @@ is faster, free, offline and perfectly predictable.
 
 When a model is configured this router still runs first: a confident rule match
 is dispatched directly, saving a round trip. Only genuinely open-ended requests
-reach the agent loop. That ordering is why GaleQEA feels instant on the common
+reach the agent loop. That ordering is why QE Agent feels instant on the common
 path instead of thinking for four seconds before clicking a button.
 """
 

@@ -194,7 +194,7 @@ def test_a_declared_output_schema_is_honoured_by_the_result():
 
 
 def test_the_mcp_boundary_strips_ui_payload():
-    """`_ui` is GaleQEA's own workspace concern and means nothing to an external
+    """`_ui` is QE Agent's own workspace concern and means nothing to an external
     client consuming this server."""
     from galeqea.mcp_server import server  # noqa: F401  (import proves it loads)
 

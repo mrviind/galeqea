@@ -2,8 +2,8 @@
 
 Why this exists in this exact shape
 -----------------------------------
-Many users hold a Claude Pro or Max subscription and reasonably ask "can GaleQEA
-just use that?". Routing those credentials through GaleQEA is not permitted.
+Many users hold a Claude Pro or Max subscription and reasonably ask "can QE Agent
+just use that?". Routing those credentials through QE Agent is not permitted.
 Anthropic's Claude Code legal and compliance documentation (updated 20 February
 2026, enforcement from 4 April 2026) states that using OAuth tokens obtained
 through Claude Free, Pro or Max accounts *in any other product, tool or service,
@@ -11,19 +11,19 @@ including the Agent SDK, is not permitted*, and that Anthropic does not permit
 third-party developers to offer Claude.ai login inside their own applications or
 to route requests through Free/Pro/Max plan credentials on behalf of users.
 
-So GaleQEA does the only compliant thing: it never touches those credentials at
+So QE Agent does the only compliant thing: it never touches those credentials at
 all. It shells out to the ``claude`` binary **the user installed and
 authenticated themselves, on their own machine**, exactly as if they had typed
-the command. GaleQEA supplies a prompt on stdin and reads stdout. It does not
+the command. QE Agent supplies a prompt on stdin and reads stdout. It does not
 read credential files, does not extract or forward tokens, and does not offer a
 Claude.ai login.
 
 Three guardrails enforce that boundary in code:
 
 * the bridge refuses to run unless the server is bound to a loopback address -
-  a hosted GaleQEA cannot use a user's local subscription by proxy;
+  a hosted QE Agent cannot use a user's local subscription by proxy;
 * the subprocess environment is scrubbed of every Anthropic credential variable
-  GaleQEA itself might hold, so the CLI can only ever use its own auth;
+  QE Agent itself might hold, so the CLI can only ever use its own auth;
 * every invocation is written to the audit ledger as a local-agent call.
 
 Cloud and SaaS deployments default to API-key auth and this provider is
@@ -44,7 +44,7 @@ from .base import Completion, LLMProvider, Message, ProviderError, Role, ToolSpe
 LOOPBACK = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 
 #: Scrubbed from the subprocess environment so the CLI cannot inherit a key that
-#: belongs to GaleQEA rather than to the user.
+#: belongs to QE Agent rather than to the user.
 CREDENTIAL_VARS = (
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
@@ -56,7 +56,7 @@ CREDENTIAL_VARS = (
 
 class ClaudeCLIProvider(LLMProvider):
     name = "claude_cli"
-    supports_tools = False  # the CLI runs its own tool loop; GaleQEA consumes text
+    supports_tools = False  # the CLI runs its own tool loop; QE Agent consumes text
     supports_streaming = False
     supports_vision = False
 
@@ -73,7 +73,7 @@ class ClaudeCLIProvider(LLMProvider):
         if settings.host not in LOOPBACK:
             raise ProviderError(
                 "the Bring-Your-Own-Agent bridge only runs on a loopback-bound "
-                f"server (host is {settings.host!r}). A hosted GaleQEA must not "
+                f"server (host is {settings.host!r}). A hosted QE Agent must not "
                 "drive a user's local Claude subscription - configure an API key "
                 "provider for server deployments."
             )
@@ -101,7 +101,7 @@ class ClaudeCLIProvider(LLMProvider):
         if not self.available():
             raise ProviderError(
                 f"'{self.binary}' was not found on PATH. Install Claude Code and run "
-                "`claude` once to authenticate, then retry. GaleQEA never handles "
+                "`claude` once to authenticate, then retry. QE Agent never handles "
                 "those credentials itself."
             )
 
@@ -181,7 +181,7 @@ class ClaudeCLIProvider(LLMProvider):
                 output_tokens=meta.get("output_tokens", 0),
                 cached_tokens=meta.get("cache_read_input_tokens", 0) or 0,
             )
-            # Cost is the user's own subscription usage; GaleQEA does not bill it.
+            # Cost is the user's own subscription usage; QE Agent does not bill it.
             usage.cost_usd = 0.0
             if payload.get("is_error"):
                 raise ProviderError(f"claude CLI reported an error: {text[:400]}")

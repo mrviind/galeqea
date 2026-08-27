@@ -2,7 +2,7 @@
 
 The industry default is "when a selector breaks, ask a model for a new one".
 That is slow, expensive, non-deterministic, and it patches one test at a time.
-GaleQEA runs a ladder instead, cheapest and most certain first:
+QE Agent runs a ladder instead, cheapest and most certain first:
 
   Tier 0  Locator ladder      - alternate rungs already stored on the element.
                                 Free, deterministic, no analysis at all.

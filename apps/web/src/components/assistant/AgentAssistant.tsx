@@ -7,7 +7,7 @@ import { MessageInput } from './MessageInput';
 import { MessageList, type ToolActivity } from './MessageList';
 
 /**
- * The Agent Copilot — the persistent right dock.
+ * The Assistant — the persistent right dock.
  *
  * Every credential it uses is resolved server-side. There is no key in this
  * component, no key in the store, and nothing written to localStorage beyond the
@@ -26,9 +26,9 @@ const SUGGESTIONS = [
   'schedule regression nightly at 2am',
 ];
 
-const MODEL_PREF_KEY = 'galeqea.copilot.model';
+const MODEL_PREF_KEY = 'galeqea.assistant.model';
 
-export function AgentCopilot() {
+export function AgentAssistant() {
   const { project } = useApp();
   const { applyToolProjection } = useWorkspace();
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -210,7 +210,7 @@ export function AgentCopilot() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3">
-        <span className="text-[12px] font-semibold tracking-tight text-ink">Agent Copilot</span>
+        <span className="text-[12px] font-semibold tracking-tight text-ink">Assistant</span>
         <span className="text-[10.5px] text-ink-3">plain English, live</span>
       </header>
 

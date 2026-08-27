@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Question or discussion
-    url: https://github.com/mrviind/galeqea/discussions
+    url: https://github.com/mrviind/qe-agent/discussions
     about: "How do I…? Ideas, and show-and-tell. Please don't use the issue tracker for questions."
   - name: Security vulnerability
-    url: https://github.com/mrviind/galeqea/security/policy
+    url: https://github.com/mrviind/qe-agent/security/policy
     about: Report privately — never in a public issue. See SECURITY.md.

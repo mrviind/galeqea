@@ -92,7 +92,7 @@ interface WorkspaceState {
   setTestScript: (pane: TestScriptPane) => void;
   clearPane: (pane: 'requirements' | 'test_matrix' | 'telemetry' | 'rca') => void;
 
-  /** Called by the copilot when a tool returns a `_ui` projection. */
+  /** Called by the agent when a tool returns a `_ui` projection. */
   applyToolProjection: (projection: Record<string, unknown>) => 'requirements' | 'test_matrix' | 'rca' | null;
 
   beginRun: (target: string) => void;
@@ -218,7 +218,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 /**
  * Ask the canvas to show a pane.
  *
- * A DOM event rather than another context field: the Copilot and the tab strip
+ * A DOM event rather than another context field: the agent and the tab strip
  * are siblings with no shared ancestor below <App>, and threading a setter
  * through both would couple every intermediate component to a concern neither
  * of them owns.

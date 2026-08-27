@@ -338,7 +338,7 @@ def _plain_description(case: PortableTestCase) -> str:
         lines += [f"- {p}" for p in case.preconditions]
     if case.requirement_refs:
         lines.append(f"\nRequirements: {', '.join(case.requirement_refs)}")
-    lines.append("\nExported from GaleQEA. Steps are held in the test's own step list.")
+    lines.append("\nExported from QE Agent. Steps are held in the test's own step list.")
     return "\n".join(lines)[:30000]
 
 

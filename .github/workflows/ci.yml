@@ -77,7 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # GaleQEA enforces on itself what it enforces on its users: no
+          # QE Agent enforces on itself what it enforces on its users: no
           # AI-generated change reaches main without a human who read it.
           range="origin/${{ github.base_ref }}...HEAD"
           if git log "$range" --format='%B' | grep -qiE '^Assisted-by:|Co-authored-by:.*(claude|copilot|cursor|gpt)'; then

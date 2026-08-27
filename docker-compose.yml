@@ -16,7 +16,7 @@ services:
       GALEQEA_HOST: 0.0.0.0
       # A deployment reachable by more than one person must not skip login.
       GALEQEA_SINGLE_USER_MODE: "true"
-      # Model configuration is optional — GaleQEA runs fully offline without it.
+      # Model configuration is optional — QE Agent runs fully offline without it.
       # GALEQEA_AI_MODE: api_key
       # GALEQEA_PROVIDER: anthropic
       # GALEQEA_MODEL: claude-opus-5

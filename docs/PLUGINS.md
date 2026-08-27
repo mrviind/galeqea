@@ -1,4 +1,4 @@
-# Writing a GaleQEA plugin
+# Writing a QE Agent plugin
 
 A plugin is a directory with a manifest and a Python module. Plugins can add
 reporters, analyzers, step actions, integrations, model providers and UI panels.
@@ -69,7 +69,7 @@ granted is **absent**, not merely discouraged.
 
 The sandbox constrains what a *cooperative* plugin can reach and makes an
 *uncooperative* one obvious. In-process Python cannot be a true security boundary —
-a determined plugin can import whatever it likes. GaleQEA therefore:
+a determined plugin can import whatever it likes. QE Agent therefore:
 
 - installs plugins disabled, with no capabilities;
 - requires an admin to grant each capability;

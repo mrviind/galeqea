@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { GaleQEALogo } from '../ui/GaleQEALogo';
+import { QEAgentLogo } from '../ui/QEAgentLogo';
 
 /**
  * The branded empty state.
@@ -20,7 +20,7 @@ export function EmptyPane({
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 py-16 text-center">
       <div className="relative mb-5">
-        <GaleQEALogo size="lg" showText={false} />
+        <QEAgentLogo size="lg" showText={false} />
         <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-md border border-line bg-surface text-ink-3">
           {icon}
         </span>

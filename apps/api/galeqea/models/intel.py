@@ -234,7 +234,7 @@ class ExplorationFinding(Base, IdMixin, TimestampMixin):
 
 
 class RecordingSession(Base, IdMixin, TimestampMixin):
-    """One session where a person drove the browser and GaleQEA watched.
+    """One session where a person drove the browser and QE Agent watched.
 
     The raw captured interactions are kept alongside the compressed step list on
     purpose. Compression is a set of judgement calls - which click was only a

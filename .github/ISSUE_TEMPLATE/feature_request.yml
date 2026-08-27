@@ -5,21 +5,21 @@ body:
   - type: markdown
     attributes:
       value: |
-        GaleQEA is deliberately a **test-automation** tool. Requests are weighed
+        QE Agent is deliberately a **test-automation** tool. Requests are weighed
         against that scope: authoring, execution, healing, coverage, triage,
         reporting, and the integrations that serve them.
   - type: textarea
     id: problem
     attributes:
       label: The problem
-      description: What are you trying to do that GaleQEA makes hard or impossible today? Describe the problem, not your proposed patch.
+      description: What are you trying to do that QE Agent makes hard or impossible today? Describe the problem, not your proposed patch.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: Proposed solution
-      description: What would you like GaleQEA to do?
+      description: What would you like QE Agent to do?
     validations:
       required: true
   - type: dropdown
@@ -44,7 +44,7 @@ body:
     attributes:
       label: Scope check
       options:
-        - label: This is a testing / quality-engineering capability, not a request to turn GaleQEA into a general project-management or non-testing tool.
+        - label: This is a testing / quality-engineering capability, not a request to turn QE Agent into a general project-management or non-testing tool.
           required: true
   - type: textarea
     id: alternatives

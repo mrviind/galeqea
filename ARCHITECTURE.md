@@ -1,13 +1,13 @@
 # Architecture
 
-This document records the decisions that shaped GaleQEA and the reasoning behind
+This document records the decisions that shaped QE Agent and the reasoning behind
 them. Where a decision has a cost, the cost is stated.
 
 ---
 
 ## 1. Tests are data, not code
 
-A GaleQEA test is a row plus an ordered list of typed steps. Each step carries:
+A QE Agent test is a row plus an ordered list of typed steps. Each step carries:
 
 - an **action** from a small, auditable vocabulary (~30 verbs);
 - a **semantic intent** in plain language — *"submit the payment form"*;
@@ -37,7 +37,7 @@ Most self-healing patches a *selector inside a test*. If forty tests reference t
 same "Pay" button, a redesign breaks forty tests and produces forty independent
 heals — forty analyses, forty reviews, forty chances to disagree.
 
-GaleQEA maintains a persistent **App Model**: a graph of screens and elements, where
+QE Agent maintains a persistent **App Model**: a graph of screens and elements, where
 each element owns its intent, role, accessible name, attribute fingerprint and
 locator ladder. A step points at `element_id`. When a locator breaks:
 
@@ -436,7 +436,7 @@ Stated plainly, because a list of features without them is marketing:
   with a note saying the rest needs authoring by hand. Driving two contexts from
   one recorded step list is not modelled.
 - **Recorded assertions are opt-in.** Alt+click is the only way to say "this must
-  be here". GaleQEA will not invent assertions from a browsing session, so a
+  be here". QE Agent will not invent assertions from a browsing session, so a
   recording where nobody asserted anything produces a test that proves the flow
   completes, not that it is correct. It says so, but it is still a real gap.
 - **API generation reads the top level of a request body.** Nested-object

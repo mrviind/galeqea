@@ -263,7 +263,7 @@ export default function Tests() {
             <section>
               <div className="mb-1 flex items-center gap-2">
                 <h2 className="text-[11px] font-medium uppercase tracking-wide text-ink-3">Export</h2>
-                <span className="text-[10.5px] text-ink-3">runs anywhere, with no GaleQEA dependency</span>
+                <span className="text-[10.5px] text-ink-3">runs anywhere, with no QE Agent dependency</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {['playwright', 'playwright_python', 'robot', 'cucumber'].map((target) => (

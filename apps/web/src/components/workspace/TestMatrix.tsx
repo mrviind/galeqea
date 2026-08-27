@@ -75,7 +75,7 @@ export function TestMatrix() {
       <EmptyPane
         icon={<Grid3x3 size={11} />}
         title="No script generated"
-        body="Give the Copilot a Gherkin scenario and the generated spec and page object appear here. Locators the scenario does not pin down arrive as TODOs — they are never guessed."
+        body="Give the agent a Gherkin scenario and the generated spec and page object appear here. Locators the scenario does not pin down arrive as TODOs — they are never guessed."
       />
     );
   }
@@ -203,10 +203,10 @@ function PlanView() {
 
         <p className="mt-4 text-[11.5px] leading-relaxed text-ink-3">
           {unknown
-            ? 'One or more steps name a tool that does not exist — ask the Copilot to revise the plan.'
+            ? 'One or more steps name a tool that does not exist — ask the agent to revise the plan.'
             : activePlan.writesState
-              ? 'The write steps will each still ask for your approval as they run. Tell the Copilot to proceed, or adjust the plan first.'
-              : 'This plan only reads. Tell the Copilot to proceed when you are ready.'}
+              ? 'The write steps will each still ask for your approval as they run. Tell the agent to proceed, or adjust the plan first.'
+              : 'This plan only reads. Tell the agent to proceed when you are ready.'}
         </p>
       </div>
     </div>

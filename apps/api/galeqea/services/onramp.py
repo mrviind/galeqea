@@ -1,9 +1,9 @@
-"""The first-run on-ramp: point GaleQEA at a URL and test it immediately.
+"""The first-run on-ramp: point QE Agent at a URL and test it immediately.
 
 A brand-new user has no requirement document, no recorded session and — in No-AI
 mode — no model to author tests for them. Without an on-ramp their first minute is
 a dead end. This module gives them a real one: they type a URL in the chat (or the
-chat asks for it), and GaleQEA drives a real browser to that URL, checks it loads
+chat asks for it), and QE Agent drives a real browser to that URL, checks it loads
 cleanly, and reports what it saw — using the same execution pipeline every other
 run uses, with **no model and no manual authoring**.
 

@@ -1,7 +1,7 @@
 """The App Model - a persistent digital twin of the application under test.
 
 Most tools heal a *selector*. That is patching a symptom: the same button gets
-re-found independently by forty tests, forty times. GaleQEA instead maintains a
+re-found independently by forty tests, forty times. QE Agent instead maintains a
 durable graph of screens and elements. A test step points at ``element_id``; when
 the UI shifts, the element is re-resolved **once** and every test that references
 it is fixed at the same moment - and the change is shown to a human as a diff

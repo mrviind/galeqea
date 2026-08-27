@@ -1,6 +1,6 @@
 # Demo application under test
 
-A deliberately tiny checkout page so GaleQEA's full pipeline can be exercised
+A deliberately tiny checkout page so QE Agent's full pipeline can be exercised
 end to end without pointing it at anything real.
 
 ```bash

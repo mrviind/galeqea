@@ -4,10 +4,10 @@ import { ArrowRight, Check, Loader2, ShieldAlert, TriangleAlert, X, Zap } from '
 import type { ChatMessage } from '../../lib/api';
 import { clock } from '../../lib/format';
 import { Blocks } from '../Blocks';
-import { GaleQEALogo } from '../ui/GaleQEALogo';
+import { QEAgentLogo } from '../ui/QEAgentLogo';
 
 /**
- * The Copilot transcript.
+ * The Assistant transcript.
  *
  * Two things it does that a plain chat log does not, both of which exist because
  * this agent takes actions rather than only answering:
@@ -67,7 +67,7 @@ export function MessageList({
       {messages.length === 0 && !busy && (
         <div className="space-y-3 pt-2">
           <div className="space-y-1.5">
-            <GaleQEALogo size="lg" showText={false} />
+            <QEAgentLogo size="lg" showText={false} />
             <h2 className="pt-1.5 text-[14px] font-semibold tracking-tight text-ink">
               Drive quality from here.
             </h2>
@@ -103,7 +103,7 @@ export function MessageList({
       {draft && (
         <article className="space-y-1.5" aria-live="polite">
           <header className="flex items-baseline gap-2">
-            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-accent">Copilot</span>
+            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-accent">Assistant</span>
             <span className="text-[10px] text-ink-3">streaming</span>
           </header>
           <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink">
@@ -152,7 +152,7 @@ function Message({ message, nextSteps, onSuggest }: {
       <header className="flex items-baseline gap-2">
         <span className={clsx('text-[10.5px] font-semibold uppercase tracking-wide',
           isUser ? 'text-ink-3' : 'text-accent')}>
-          {isUser ? 'You' : 'Copilot'}
+          {isUser ? 'You' : 'Assistant'}
         </span>
         {message.at && <span className="mono text-[10px] text-ink-3">{clock(message.at)}</span>}
       </header>
@@ -212,7 +212,7 @@ function Message({ message, nextSteps, onSuggest }: {
  * whether it is going to need their approval — which is the difference between
  * "wait a moment" and "you are about to be asked something".
  *
- * Cyan is GaleQEA's `review` token rather than a raw palette value, so tool
+ * Cyan is QE Agent's `review` token rather than a raw palette value, so tool
  * activity stays distinct from the run statuses (green pass, red fail, amber
  * flaky) that already own the rest of the colour vocabulary. The bolt is a
  * Lucide glyph rather than an emoji: it stays crisp at 11px and matches the

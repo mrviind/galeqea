@@ -11,7 +11,7 @@ import { Button, Chip, Empty, Panel, SectionTitle, Spinner } from '../components
 
 /**
  * Two ways to author tests without writing any: drive the browser and let
- * GaleQEA watch, or hand it an API specification.
+ * QE Agent watch, or hand it an API specification.
  *
  * Both land in the same place — a PROPOSED test case waiting for review. That
  * is deliberate and it is shown on screen: having recorded a session is not the
@@ -186,7 +186,7 @@ function Recorder() {
             <Empty
               icon={<MousePointerClick size={26} />}
               title="No recording selected"
-              body="Start a session and use the application the way a tester would. GaleQEA captures each interaction as a typed step with its locator ladder, so the result is a maintainable test rather than a transcript."
+              body="Start a session and use the application the way a tester would. QE Agent captures each interaction as a typed step with its locator ladder, so the result is a maintainable test rather than a transcript."
             />
           </Panel>
         )}

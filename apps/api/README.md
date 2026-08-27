@@ -1,6 +1,6 @@
-# GaleQEA API
+# QE Agent API
 
-The Python backend for [GaleQEA](https://github.com/mrviind/galeqea) — an AI-first,
+The Python backend for [QE Agent](https://github.com/mrviind/qe-agent) — an AI-first,
 local-first, open-source test-automation platform.
 
 This package hosts the FastAPI application, the canonical tool registry (shared by
@@ -9,7 +9,7 @@ approval gate, the execution supervisor, the tiered locator-healing engine, the
 App Model, and the hash-chained audit ledger.
 
 It is installed as part of the full project — see the
-[repository README](https://github.com/mrviind/galeqea#readme) for setup
+[repository README](https://github.com/mrviind/qe-agent#readme) for setup
 (`make start`), architecture, and usage. To work on just the API:
 
 ```bash

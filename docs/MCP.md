@@ -1,6 +1,6 @@
-# Using GaleQEA over MCP
+# Using QE Agent over MCP
 
-GaleQEA is MCP-first. The registry that backs the built-in chat is exposed directly,
+QE Agent is MCP-first. The registry that backs the built-in chat is exposed directly,
 so an external host — Claude Code, Cursor, VS Code — gets **exactly** the same
 capabilities, the same schema validation and the same approval gate. There is no
 reduced "MCP subset" to drift out of sync with the product.
@@ -97,12 +97,12 @@ approved test: REQ-002.
 > **You:** Propose tests for REQ-002.
 
 The host calls `create_test`. Each proposal returns an `approval_id`. Nothing
-exists yet — open GaleQEA's Approvals page, read the rationale and the diff, and
+exists yet — open QE Agent's Approvals page, read the rationale and the diff, and
 decide.
 
 ## Remote deployments
 
 Set `GALEQEA_SINGLE_USER_MODE=false` and issue a scoped API token. Per the MCP
 specification, authorization servers must implement OAuth 2.1 with appropriate
-security measures for both confidential and public clients; GaleQEA requires PKCE
+security measures for both confidential and public clients; QE Agent requires PKCE
 with the S256 method and has no plaintext-challenge fallback.

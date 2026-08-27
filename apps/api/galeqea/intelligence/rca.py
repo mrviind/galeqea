@@ -1,7 +1,7 @@
 """Root-cause analysis.
 
 An RCA that says "the test failed because the element was not found" is a
-restatement, not an analysis. GaleQEA builds a real one in two passes:
+restatement, not an analysis. QE Agent builds a real one in two passes:
 
 **Pass 1 - deterministic evidence gathering (always runs, no model needed).**
 Collect the failing step, the console errors and network failures that preceded

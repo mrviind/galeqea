@@ -16,7 +16,7 @@ derived — not hand-maintained. This works because every commit follows
 
 ## What the version number means
 
-GaleQEA follows [Semantic Versioning](https://semver.org/). The **public API** is
+QE Agent follows [Semantic Versioning](https://semver.org/). The **public API** is
 the REST API, the MCP tool surface, and the `galeqea` CLI.
 
 - `fix:` → PATCH

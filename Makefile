@@ -1,4 +1,4 @@
-# GaleQEA — development and deployment tasks.
+# QE Agent — development and deployment tasks.
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 PY := .venv/bin/python
@@ -17,13 +17,13 @@ setup: ## One-time setup: Python deps, Node deps, browsers, UI build
 	cd apps/runner && npm install && npx playwright install chromium
 	cd apps/web && npm install && npm run build
 	@echo ""
-	@echo "Setup complete. Start GaleQEA with:  make up"
+	@echo "Setup complete. Start QE Agent with:  make up"
 
 .PHONY: start
 start: setup up ## First run, one command: install everything, then launch on :8080
 
 .PHONY: up
-up: ## Start GaleQEA (API + UI + scheduler) on http://localhost:8080 (after `make start` once)
+up: ## Start QE Agent (API + UI + scheduler) on http://localhost:8080 (after `make start` once)
 	cd apps/api && PYTHONPATH=. ../../$(PY) -m galeqea.cli up
 
 .PHONY: dev
@@ -48,7 +48,7 @@ build: ## Build the web UI
 	cd apps/web && npm run build
 
 .PHONY: doctor
-doctor: ## Check that everything GaleQEA needs is installed
+doctor: ## Check that everything QE Agent needs is installed
 	cd apps/api && PYTHONPATH=. ../../$(PY) -m galeqea.cli doctor
 
 .PHONY: mcp
@@ -64,6 +64,6 @@ docker: ## Build and start the Docker stack
 	docker compose up --build
 
 .PHONY: clean
-clean: ## Remove build artefacts (leaves your GaleQEA data alone)
+clean: ## Remove build artefacts (leaves your QE Agent data alone)
 	rm -rf apps/web/dist apps/api/.pytest_cache .ruff_cache
 	find . -name __pycache__ -prune -exec rm -rf {} +
