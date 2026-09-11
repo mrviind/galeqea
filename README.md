@@ -1,16 +1,37 @@
 <div align="center">
 
-# GaleQEA
+# Gale QE Agent
 
-**AI-first, local-first, open-source test automation.**
+<sub>`gale`**`QE`**`a` · the open-source **AI-first test automation agent**</sub>
 
-Turn a requirement document into approved, categorised, runnable tests — then run,
-heal, analyse and report on them from a chat box. Every write passes a human
-approval gate. The AI can never approve its own output.
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/mrviind/galeqea/badge)](https://securityscorecards.dev/viewer/?uri=github.com/mrviind/galeqea)
+
+**Point it at any URL in plain English. It runs on any model, and won't burn a token to re-run.**
+
+Describe what to test in plain English and the agent explores your app, plans, generates
+the tests, and heals what breaks, driven by whatever LLM you already use (Anthropic,
+OpenAI, Gemini, or a local model). It spends the model to **build and reason**; once a test exists,
+**re-running it (execution, deterministic healing, scheduling, reporting) needs no model
+and costs nothing.** Most AI-testing tools call the model on every run and meter you for it.
+This one calls it to build, then re-runs for free.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-624%20passing-brightgreen.svg)](apps/api/tests)
-[![Offline](https://img.shields.io/badge/works-fully%20offline-informational.svg)](#no-ai-mode-is-the-default)
+[![Tests](https://img.shields.io/badge/tests-1127%20passing-brightgreen.svg)](apps/api/tests)
+[![Any model](https://img.shields.io/badge/runs%20on-any%20LLM-8A2BE2.svg)](#bring-your-own-model)
+[![Self-hostable](https://img.shields.io/badge/self--hostable-cloud%20or%20local-informational.svg)](#your-cost-your-data)
+
+<br />
+
+**Point it at any URL → it explores, plans, tests in a real browser, and reports.**
+
+<img src="docs/media/galeqea-ui-tour.gif" alt="A tour of GaleQEA: the Workspace, Requirements coverage, a Run detail, and the Command dashboard, each shown in dark mode and then light mode." width="820" />
+
+<sub>The whole app, both themes: Workspace, Requirements, Run detail, Command, dark then light.</sub>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/workspace-dark.png">
+  <img src="docs/media/workspace-light.png" alt="The GaleQEA workspace: an Analyze, Plan, Run, Report pipeline overview beside the chat you drive it from" width="820" />
+</picture>
 
 </div>
 
@@ -18,23 +39,35 @@ approval gate. The AI can never approve its own output.
 
 ## What makes this different
 
-Most "AI testing tools" are a model wrapped around a script runner. GaleQEA makes
-five choices that change what the product can actually do:
+Every other AI-testing tool holds your model, your data, and your tests on their
+cloud and meters you per run. GaleQEA makes different choices:
 
 | | Choice | Why it matters |
 |---|---|---|
-| **1** | **Tests are data, not code** | A test is an ordered list of typed steps, each carrying a *semantic intent* and a locator ladder. That is what makes healing durable, replay deterministic, and export to Playwright/pytest/Robot/Gherkin a rendering problem instead of a rewrite. |
-| **2** | **A persistent App Model** | GaleQEA maintains a digital twin of the application: screens, elements, and their locator history, **learned automatically from ordinary runs**. Heal an element **once** and every test that references it is repaired at the same moment — instead of patching the same button in forty tests, forty times. |
-| **3** | **Healing is tiered and mostly free** | Cached locator → deterministic fingerprint scoring → semantic re-resolution by a model, in that order. A healthy suite never pays for healing, and healing works with **no model at all**. |
-| **4** | **The gate is structural** | An agent cannot write. It files an approval request carrying a reviewable diff and its evidence. `SelfApprovalError` is raised in code — not enforced by a setting you could turn off. |
-| **5** | **No-AI mode is the default** | Authoring, execution, scheduling, reporting, flake detection, regression triage, RCA and locator healing all work with zero LLM calls and zero outbound network traffic. |
-| **6** | **Colour is signal, so the brand has none** | Green means passed, red means failed, amber means unstable. The brand is monochrome, so nothing in the interface competes with the one thing you are there to read. Shape carries meaning too: status badges are capsules, anything you can click is not. |
+| **1** | **Runs on any model, bring your own** | Anthropic, OpenAI, Gemini, Azure, a local Ollama, any OpenAI-compatible endpoint. No competitor lets you plug in your own LLM. Reuse the key you already pay for: no second AI bill, no vendor lock-in. |
+| **2** | **Pay to build, not to re-run** | The model does the thinking: exploring, planning, generating tests, reasoning about failures, semantic healing. Execution, deterministic healing, scheduling and reporting need no model, so once a test exists, re-running it (nightly, on every deploy) calls no model and costs nothing. Most AI-testing tools bill you on every run; this one bills you to build. |
+| **3** | **Tests are data, not code** | A test is an ordered list of typed steps, each carrying a *semantic intent* and a locator ladder. That is what makes the agent's output durable, replays deterministic, and export to Playwright/pytest/Robot/Gherkin a rendering problem instead of a rewrite. The tests are yours, on your disk. |
+| **4** | **A persistent App Model** | GaleQEA maintains a digital twin of the application: screens, elements, and their locator history, **learned automatically from ordinary runs**. Heal an element **once** and every test that references it is repaired at the same moment, instead of patching the same button in forty tests, forty times. |
+| **5** | **Healing is tiered, so it rarely costs a token** | Cached locator, then deterministic fingerprint scoring, then the model only as a last resort. A healthy suite heals for free; the LLM is spent where nothing cheaper can decide. |
+| **6** | **The agent can't approve its own work** | Every change it proposes carries a reviewable diff and its evidence, and waits for a human. `SelfApprovalError` is enforced in code, not a setting you could turn off. |
+
+---
+
+## What's new
+
+Recent, verified additions (see [CHANGELOG](CHANGELOG.md) for the full list):
+
+- **Release management for test managers**: milestones with exit criteria, plans, cycles × configurations, a Go/No-Go **readiness** verdict computed from live metrics, and an immutable human **sign-off** (an AI principal can never sign).
+- **Defects from failures**: one sentence or one click files a Jira/GitHub/GitLab issue from a red test, with reproduction, evidence attached, and **fingerprint dedupe** so a recurrence comments instead of duplicating.
+- **Atlassian-first integrations**: import Jira stories → tests, push results to **Xray / Zephyr Scale / TestRail**, publish a **Confluence** release page, and get **Slack / Teams** notifications. Every external write passes the approval gate; credentials are vault-sealed.
+- **Import from other tools**: Gherkin, TestRail/Xray/Zephyr **CSV**, and **JUnit** results become proposals or a run.
+- **Tester ergonomics**: one-click **evidence bundles**, a keyboard manual runner, and timeboxed **exploratory (SBTM) sessions** from chat.
 
 ---
 
 ## Quick start
 
-Clone, then one command does the rest — it installs the Python and Node
+Clone, then one command does the rest: it installs the Python and Node
 dependencies, downloads a Chromium, builds the UI, and launches on
 **http://localhost:8080**.
 
@@ -42,20 +75,21 @@ dependencies, downloads a Chromium, builds the UI, and launches on
 git clone https://github.com/mrviind/galeqea && cd galeqea && make start
 ```
 
-`make start` is the first-run command. Every run after that is just `make up`
-(it skips the install). No API key is required — GaleQEA is **fully offline by
-default** (see [No-AI mode](#no-ai-mode-is-the-default)).
+`make start` is the first-run command; after that it's just `make up`. Connect a
+model in **Settings → Model** (any provider, or a local Ollama) to give the agent its
+reasoning. The mechanical layer runs without one, so you can start immediately and
+[add a model when you want](#bring-your-own-model).
 
-Then, in the chat box, point it at anything you want to test:
+Then paste a URL into the **Test any website** field on the home screen, or type it
+in the chat:
 
 ```
-test https://your-app.com
+test https://aravindarumugam.com
 ```
 
-GaleQEA opens it in a real browser, checks it loads cleanly, and sets it as your
-target — **no model, no setup, no test to write first.** Just say `test my site`
-and it'll ask you for the URL. That's the on-ramp; from there everything else is a
-sentence away:
+The agent opens it in a real browser, explores it, proposes a plan, and, once you
+approve, tests it and reports back. (`aravindarumugam.com` is a real, consenting demo
+target: swap in your own site.) From there everything else is a sentence away:
 
 ```
 run smoke again          what's not tested?          why did the last run fail?
@@ -64,10 +98,26 @@ rerun only failed        which tests are flaky?      schedule regression nightly
 
 None of those needs a model either.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/run-detail-dark.png">
+    <img src="docs/media/run-detail-light.png" alt="A completed GaleQEA run: coverage by test type, a live execution log, and the $0.00 / 0 tokens cost of re-running it" width="760" />
+  </picture>
+  <br /><sub>A run against a real site: coverage by type, the live log, and what it cost (nothing, to re-run).</sub>
+</p>
+
 **Docker instead:**
 
 ```bash
 docker compose up          # SQLite, one container, one port
+```
+
+A container is reachable by more than just you, so it defaults to requiring a
+login: watch the startup logs for a one-time setup link to set the admin
+password, then sign in. For a solo local trial, skip that step entirely with:
+
+```bash
+GALEQEA_SINGLE_USER_MODE=true docker compose up
 ```
 
 **Try it end to end** with the bundled application under test:
@@ -81,7 +131,7 @@ make demo    # serves examples/demo-app on :8765
 ## The workflow
 
 Four ways in, one way through. Recording a session and importing an API
-specification feed the same review board as requirement ingestion — the gate does
+specification feed the same review board as requirement ingestion. The gate does
 not make exceptions for the route a proposal arrived by.
 
 ```
@@ -95,7 +145,7 @@ not make exceptions for the route a proposal arrived by.
   │                │        │                │      │ and injection  │
   │ customer IDs   │        │ ladder per     │      │ cases derived  │
   │ preserved;     │        │ element;       │      │ from the schema│
-  │ ambiguities    │        │ credentials    │      │ by rule — no   │
+  │ ambiguities    │        │ credentials    │      │ by rule, no    │
   │ raised, not    │        │ never read;    │      │ model used and │
   │ guessed at     │        │ noise collapsed│      │ none needed    │
   └───────┬────────┘        └───────┬────────┘      └───────┬────────┘
@@ -114,7 +164,7 @@ not make exceptions for the route a proposal arrived by.
           └─────────────┬───────────┴───────────────────────┘
                         ▼
         ╔═══════════════════════════════════╗
-        ║           HUMAN REVIEW            ║  approve / reject / edit —
+        ║           HUMAN REVIEW            ║  approve / reject / edit:
         ╚════════════════┬══════════════════╝  every proposal, with its
                          ▼                     rationale and provenance
            manual · exploratory · automated
@@ -137,20 +187,20 @@ not make exceptions for the route a proposal arrived by.
 <details>
 <summary><b>Model & agents</b></summary>
 
-- **Provider abstraction** — Anthropic, OpenAI, Google Gemini, Azure OpenAI, Ollama,
-  any OpenAI-compatible endpoint. Switching provider is a config change.
-- **Three operating modes** — API key · local/offline · **No-AI (default)**.
-- **Bring your own key** — sealed in the local vault, **verified against the
-  provider before it is stored**, scoped per project with a global fallback, and
-  capped by an optional monthly budget enforced *before* the spend. The API never
-  returns a key, only a hint. See [docs/AI.md](docs/AI.md).
-- **Bring-Your-Own-Agent bridge** — shells out to the Claude Code CLI *you* installed
-  and authenticated on your own machine. See [Claude subscriptions](#claude-subscriptions).
-- **Specialist roles** — Requirement Analyst, Test Designer, Script Generator,
+- **Any model, your key**: Anthropic, OpenAI, Google Gemini, Azure OpenAI, a local
+  Ollama, any OpenAI-compatible endpoint. Switching provider is a config change, the
+  key is sealed in the local vault (the API returns only a hint, never the key), and
+  a monthly budget is enforced *before* the spend. See [docs/AI.md](docs/AI.md).
+- **Runs deterministically when it can**: execution, healing, triage, reporting and
+  data generation resolve by rule, so the model is spent on judgment, not clicks.
+  Add no model at all and the mechanical layer still runs.
+- **Specialist roles**: Requirement Analyst, Test Designer, Script Generator,
   Executor, Explorer, Healer, RCA Analyst, Judge, Coverage Cartographer, Data Architect.
-- **Inspectable memory** — every remembered fact is a row you can read, correct,
+- **Bring your own agent** *(optional)*: bridge to a locally-installed coding-agent
+  CLI you already run, so its credentials never pass through GaleQEA.
+- **Inspectable memory**: every remembered fact is a row you can read, correct,
   export or delete.
-- **Cost governor** — per-run token ceiling, step limit, and a usage ledger.
+- **Cost governor**: per-run token ceiling, step limit, and a usage ledger.
 
 </details>
 
@@ -161,9 +211,9 @@ not make exceptions for the route a proposal arrived by.
 - 30+ typed step actions including semantic assertions, accessibility checks,
   performance budgets, API requests, and **chaos injection** (network faults,
   offline mode, forced 5xx) to test how the UI degrades.
-- **Accessibility-tree snapshots** as the agent's page representation — far cheaper
+- **Accessibility-tree snapshots** as the agent's page representation: far cheaper
   in tokens than raw HTML and a better description of what a user can perceive.
-- **Pause-and-attach handoff** — the browser parks mid-run so a person can clear an
+- **Pause-and-attach handoff**: the browser parks mid-run so a person can clear an
   SSO prompt, an MFA challenge or a CAPTCHA, then hands control back.
 - Playwright traces, screenshots, video, console and network capture on every run.
 
@@ -173,30 +223,38 @@ not make exceptions for the route a proposal arrived by.
 <summary><b>Requirements to tests, by technique</b></summary>
 
 Boundary value analysis, equivalence partitioning, format partitioning and
-decision tables — applied to the input domain the requirement states, **by rule
+decision tables, applied to the input domain the requirement states, **by rule
 rather than by model**. `between 8 and 64 characters` yields 7/8/9 and 63/64/65
 with the right verdicts on each; `one of Draft, Submitted, Approved` yields every
 member plus an outsider; `if A and B and C` yields an eight-row decision table.
 
 Every value names the technique that produced it, so a reviewer can judge it
 rather than trust it. Boundary arithmetic is computed, never generated. Where the
-requirement is silent — is enum matching case sensitive? — the value is marked
+requirement is silent (is enum matching case sensitive?), the value is marked
 **unspecified** and raised as a question instead of being asserted either way.
 
 A model, when configured, deepens this; it can never drop a requirement.
 **Every requirement ends up with at least one test**, verified rather than assumed.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/requirements-dark.png">
+    <img src="docs/media/requirements-light.png" alt="The Requirements view: coverage and automation percentages, risk-tier breakdown, and a traceability matrix from requirement to test" width="760" />
+  </picture>
+  <br /><sub>Every requirement traced to its tests, with the gaps surfaced first, not buried.</sub>
+</p>
+
 </details>
 
 <details>
-<summary><b>Session recording — a person drives, GaleQEA writes the test</b></summary>
+<summary><b>Session recording: a person drives, GaleQEA writes the test</b></summary>
 
 A headed browser opens; use the application as a tester would; close it. What
 comes out is **typed step data with a locator ladder**, not a code file.
 
 `playwright codegen` writes source that is frozen the moment it is written. A
 recorded GaleQEA test binds every element it touched into the App Model *as it is
-touched*, so it is repairable before it has ever been run — heal the element once
+touched*, so it is repairable before it has ever been run: heal the element once
 and every test referencing it follows.
 
 - **A ladder, not a selector.** Test id → role + accessible name → label →
@@ -208,7 +266,7 @@ and every test referencing it follows.
   generator reference *at the point of capture*. A value that is never read cannot
   leak into a database, an export or a log.
 - **Alt+click to assert.** The one thing a recorder cannot infer from watching
-  someone browse. Text containing a digit is not asserted — an order number changes
+  someone browse. Text containing a digit is not asserted, since an order number changes
   every run. A recording with no assertions says so in its rationale rather than
   inventing one.
 - **Compression, conservatively.** Focus-only clicks, partial keystrokes, a submit
@@ -250,13 +308,13 @@ Three judgement calls worth knowing about:
   and dereferencing a URL inside it would let the document choose what this process
   connects to. Reference cycles are depth-bounded.
 
-Spec defects — no declared 2xx, no response schema, unresolvable references — are
+Spec defects (no declared 2xx, no response schema, unresolvable references) are
 reported as limits on coverage rather than hidden.
 
 </details>
 
 <details>
-<summary><b>Synthetic test data — reproducible and unroutable</b></summary>
+<summary><b>Synthetic test data: reproducible and unroutable</b></summary>
 
 Every value is a pure function of its seed, so a failure caused by an apostrophe
 in a surname reproduces exactly. blake2b rather than `random.Random`, whose stream
@@ -267,7 +325,7 @@ RFC 6761 reserved names; telephone numbers only from the ranges regulators reser
 for fiction (NANP `555-01xx`, Ofcom `07700 900xxx`); IP addresses from the RFC 5737
 documentation range; and payment card numbers are Luhn-valid but carry major
 industry identifier `9`, which ISO/IEC 7812 reserves for national assignment and no
-scheme issues — so the number passes a checksum and can never reach a network.
+scheme issues, so the number passes a checksum and can never reach a network.
 
 Field kind is inferred from the declared type first, then the name in any casing;
 `card code` is a CVV, `card expiry` is a date, and only then is a bare `card` a PAN.
@@ -278,28 +336,28 @@ Each kind also knows how it can be wrong, with the reason a reviewer needs.
 <details>
 <summary><b>Visual regression, structure first</b></summary>
 
-Pixel diffing produces a red rectangle and a shrug — it cannot tell a font
+Pixel diffing produces a red rectangle and a shrug: it cannot tell a font
 hinting change from a missing checkout button, so teams learn to mute it.
 GaleQEA compares three layers and only escalates when the cheap ones disagree:
 
-1. **Structural** — diff the accessibility snapshots. Catches a vanished
+1. **Structural**: diff the accessibility snapshots. Catches a vanished
    control, a renamed heading, changed body copy. Deterministic, offline, and
    immune to anti-aliasing.
-2. **Perceptual** — region-based pixel comparison with an anti-aliasing
+2. **Perceptual**: region-based pixel comparison with an anti-aliasing
    tolerance, reporting *boxes* rather than a percentage. "The largest changed
    region is 656×112 at (400, 240)" is actionable; "0.9% of pixels differ" is not.
-3. **Semantic judgement** — only when the first two disagree, a model says
+3. **Semantic judgement**: only when the first two disagree, a model says
    whether a user would care.
 
 The ordering matters, and the numbers show why: removing a required field from
 a checkout form changes **under 1% of the image**. Any pixel threshold loose
-enough to tolerate anti-aliasing is also loose enough to miss it — but the
+enough to tolerate anti-aliasing is also loose enough to miss it. But the
 accessibility tree says plainly that a control disappeared, so it is graded
 `breaking`.
 
 Review is side-by-side with the changed regions boxed. Accepting records a new
 baseline **version**; the previous one is kept. Screens that did not change are
-recorded as auto-passed and stay out of the queue — a review list padded with
+recorded as auto-passed and stay out of the queue: a review list padded with
 non-events is one people stop reading.
 
 </details>
@@ -315,7 +373,7 @@ Plan-Act-Verify loop and reports findings a human triages.
   errors, 5xx responses, dead ends, unlabelled controls and silently discarded
   input. The model strategy adds judgement on top, choosing from a
   server-supplied candidate list so it can never invent a selector.
-- **Refuses destructive controls outright** — delete, revoke, sign out — in every
+- **Refuses destructive controls outright**: delete, revoke, sign out, in every
   environment. Transactional controls (pay, place order) are blocked by default
   and unlockable per session, because on staging the submit button is where the
   behaviour is. Whatever it skips, it reports.
@@ -334,7 +392,7 @@ Plan-Act-Verify loop and reports findings a human triages.
 - **Cron schedules** with a plain-English explanation shown *before* you save
   ("Runs every Monday at 18:00 UTC"), a next-fire time, pause/resume, and a
   Run-now that fires the real selection.
-- Deleting a suite a live schedule depends on is refused — a schedule firing
+- Deleting a suite a live schedule depends on is refused: a schedule firing
   against nothing produces a green empty run, which looks like success.
 
 </details>
@@ -342,18 +400,18 @@ Plan-Act-Verify loop and reports findings a human triages.
 <details>
 <summary><b>Intelligence</b></summary>
 
-- **Regression triage** — every failure classified as new / known / flaky /
+- **Regression triage**: every failure classified as new / known / flaky /
   environment / test-defect, with the headline naming what to look at first.
-- **Flaky detection** — same-commit disagreement, retry rescues, outcome entropy,
+- **Flaky detection**: same-commit disagreement, retry rescues, outcome entropy,
   healing pressure and duration variance. Score and *confidence* are reported
   separately, so a scary number from two runs is not mistaken for a verdict.
-- **Predictive test selection** — ranks the suite against changed paths using
+- **Predictive test selection**: ranks the suite against changed paths using
   learned correlations, and **lists in full what it omitted**.
-- **Anomaly detection** — robust z-scores over median/MAD, so one pathological run
+- **Anomaly detection**: robust z-scores over median/MAD, so one pathological run
   cannot blind the detector.
-- **LLM-as-judge** — sampled several times; disagreement lowers confidence and
+- **LLM-as-judge**: sampled several times; disagreement lowers confidence and
   routes to a human rather than being averaged into false certainty.
-- **RCA** — deterministic evidence gathering first (works with no model), then
+- **RCA**: deterministic evidence gathering first (works with no model), then
   optional model ranking where every hypothesis must cite evidence by id.
 
 </details>
@@ -363,7 +421,7 @@ Plan-Act-Verify loop and reports findings a human triages.
 
 - Configurable gates: per-action or batched, with risk tiers.
 - Role-based access; a machine principal can never satisfy a gate.
-- **Hash-chained audit ledger** — tamper-evident, verifiable end to end, exportable
+- **Hash-chained audit ledger**: tamper-evident, verifiable end to end, exportable
   for compliance. `galeqea audit` reports the exact entry where a chain breaks.
 - Envelope-encrypted vault; secret values are never returned by the API.
 - Prompt-injection scanning on every untrusted document, surfaced to the user
@@ -374,69 +432,68 @@ Plan-Act-Verify loop and reports findings a human triages.
 <details>
 <summary><b>Integrations & extensibility</b></summary>
 
-- **Test management** — push approved cases to **Xray**, **Zephyr Scale**,
+- **Test management**: push approved cases to **Xray**, **Zephyr Scale**,
   **Azure DevOps Test Plans** or **TestRail**. GaleQEA stores tests in the
   IEEE 829 shape all four implement, so export is translation, not
   reconstruction. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
-- **Jira** (REST v3) and **Xray Cloud** — including the 24-hour bearer-token refresh
+- **Jira** (REST v3) and **Xray Cloud**, including the 24-hour bearer-token refresh
   that trips up most integrations.
-- **CI** — Jenkins, GitHub Actions, GitLab CI, Azure DevOps, plus direct upload of
+- **CI**: Jenkins, GitHub Actions, GitLab CI, Azure DevOps, plus direct upload of
   JUnit / Playwright / Allure reports for air-gapped installs.
-- **Git** — GitHub, GitLab, Bitbucket. Ask the chat to
+- **Git**: GitHub, GitLab, Bitbucket. Ask the chat to
   `open a pull request with the approved checkout tests` and GaleQEA renders each
-  approved test to a Playwright file and opens a **pull request** — never a direct
+  approved test to a Playwright file and opens a **pull request**, never a direct
   commit, and only after the `git.open_pr` approval is granted. The AI proposes the
   PR; a human lets it out.
-- **MCP server** — the same tool registry that powers the built-in chat, exposed to
+- **MCP server**: the same tool registry that powers the built-in chat, exposed to
   Claude Code, Cursor and VS Code. See [docs/MCP.md](docs/MCP.md).
-- **Plugin SDK** — manifest-based, capability-scoped, hot-loadable. See
+- **Plugin SDK**: manifest-based, capability-scoped, hot-loadable. See
   [examples/plugins](examples/plugins).
 
 </details>
 
 ---
 
-## No-AI mode is the default
+## Your cost, your data
 
-GaleQEA boots with `GALEQEA_AI_MODE=no_ai`: **zero LLM calls, zero outbound network
-traffic.** What still works:
+The model earns its keep on the **thinking**: exploring a site, planning, generating
+tests, reasoning about a failure, and semantic locator healing. Everything else,
+**running** the tests, deterministic healing, scheduling, flake detection, triage,
+reporting, and the audit ledger, runs by rule, with no model. What follows, which no
+cloud-metered competitor can match:
 
-- Plain-English commands (`run …`, `rerun only failed`, `schedule … nightly at 2am`)
-- Requirement extraction, coverage analysis and gap reporting
-- Test authoring, review, execution, scheduling and reporting
-- Deterministic locator healing
-- Statistical flake detection and regression triage
-- Evidence-based root-cause analysis
-- The full audit ledger, vault and MCP server
+- **You pay to build a test, never to re-run it.** Building and reasoning call *your*
+  provider, metered by you, capped by a monthly budget enforced *before* the spend.
+  But a nightly regression, a re-run on every deploy, a scheduled suite: those call no
+  model and cost nothing, forever. (Point the building at a local model and even that
+  is free.) The token-per-action tools bill you on every single run.
+- **Nothing leaves your machine unless you aim it at a cloud model.** No telemetry,
+  ever. Run the building on a local model, or none at all, and it's genuinely
+  air-gappable: the whole run-heal-report loop never needs the network.
+- **The tests, the App Model, and the ledger all live on your disk.** Export to standard
+  Playwright / pytest / Robot / Gherkin any time. Nothing holds them hostage.
 
-A model is an enhancement, not a dependency. When one is absent, AI-only paths say
-so plainly instead of degrading into a silent stub.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/command-dark.png">
+    <img src="docs/media/command-light.png" alt="The Command dashboard: pass rate, requirement coverage, tests awaiting approval, and a live execution log across every run" width="760" />
+  </picture>
+  <br /><sub>One dashboard for pass rate, coverage, what's awaiting review, and what's running right now.</sub>
+</p>
 
 ---
 
-## Claude subscriptions
+## Bring your own model
 
-If you hold a Claude Pro or Max subscription, you may reasonably ask whether GaleQEA
-can use it. **It cannot, and neither can any other third-party product.** Anthropic's
-Claude Code legal and compliance documentation (updated 20 February 2026, enforced
-from 4 April 2026) states that using OAuth tokens obtained through Claude Free, Pro
-or Max accounts in any other product, tool or service — including the Agent SDK — is
-not permitted, and that Anthropic does not permit third-party developers to offer
-Claude.ai login in their own applications or to route requests through Free/Pro/Max
-credentials on behalf of users.
+Point GaleQEA at whatever LLM you already use: Anthropic, OpenAI, Gemini, Azure, a
+local Ollama, or any OpenAI-compatible endpoint. The key is sealed in the local vault,
+scoped per project, and capped by a monthly budget enforced before the spend; the API
+returns only a hint, never the key.
 
-GaleQEA's answer is to never touch those credentials at all. The **BYO-Agent bridge**
-shells out to the `claude` binary *you* installed and authenticated on your own
-machine, exactly as if you had typed the command. Three guardrails enforce that:
-
-1. It refuses to run unless the server is bound to a loopback address, so a hosted
-   GaleQEA cannot use someone's local subscription by proxy.
-2. The subprocess environment is scrubbed of every Anthropic credential variable
-   GaleQEA itself might hold.
-3. Every invocation is written to the audit ledger.
-
-Cloud and SaaS deployments default to API-key authentication, where this question
-does not arise.
+Prefer to drive a coding-agent CLI you have already installed and authenticated? An
+optional local bridge shells out to it as if you had typed the command; its
+credentials never pass through GaleQEA, and it runs only when the server is bound to
+loopback.
 
 ---
 
@@ -472,7 +529,7 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) for the design decisions and their reaso
 | [docs/AI.md](docs/AI.md) | How requirements become tests, and bring-your-own-key |
 | [docs/AUTHORING.md](docs/AUTHORING.md) | Session recording, API specification import, synthetic test data |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Exporting test cases to Xray, Zephyr, Azure DevOps, TestRail |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributor guide — dev setup, Conventional Commits, DCO, the AI-code review gate |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributor guide: dev setup, Conventional Commits, DCO, the AI-code review gate |
 | [SECURITY.md](SECURITY.md) | Threat model and vulnerability reporting |
 | [SUPPORT.md](SUPPORT.md) | Where to ask questions vs. file bugs |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 |
@@ -499,7 +556,7 @@ galeqea plugins --install ./my-plugin
 
 ## Licence
 
-Apache-2.0 — a permissive licence with an explicit patent grant, chosen because this
+Apache-2.0, a permissive licence with an explicit patent grant, chosen because this
 project expects corporate contributors and integrations. Contributions are accepted
 under the [DCO](CONTRIBUTING.md#developer-certificate-of-origin).
 

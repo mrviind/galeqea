@@ -7,6 +7,9 @@ import {
 import { api } from '../lib/api';
 import { useApp } from '../state';
 import { Button, Chip, Empty, Meter, Panel, SectionTitle, Spinner } from '../components/primitives';
+import { ApiTokensPanel } from '../components/ApiTokensPanel';
+import { EnvironmentsPanel } from '../components/EnvironmentsPanel';
+import { IntegrationsPanel } from '../components/IntegrationsPanel';
 
 export default function Settings() {
   const { project, capabilities } = useApp();
@@ -19,8 +22,6 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [health, setHealth] = useState<any>(null);
   const [audit, setAudit] = useState<any>(null);
-  const [connections, setConnections] = useState<any[]>([]);
-  const [providers, setProviders] = useState<any[]>([]);
   const [keys, setKeys] = useState<any[]>([]);
   const [usage, setUsage] = useState<any>(null);
 
@@ -34,12 +35,8 @@ export default function Settings() {
     setMode(s.ai.mode); setProvider(s.ai.provider);
     setModel(s.ai.model); setBaseUrl(s.ai.base_url);
     if (project) {
-      const [a, c, p] = await Promise.all([
-        api.get<any>(`/api/projects/${project.id}/audit?limit=25`),
-        api.get<any[]>(`/api/projects/${project.id}/integrations`),
-        api.get<any>(`/api/projects/${project.id}/integrations/providers`),
-      ]);
-      setAudit(a); setConnections(c); setProviders(p.providers);
+      // Integrations are owned by IntegrationsPanel now; here we only need the audit.
+      setAudit(await api.get<any>(`/api/projects/${project.id}/audit?limit=25`));
     }
   }, [project]);
 
@@ -67,7 +64,7 @@ export default function Settings() {
       <div className="space-y-3">
         {/* --- model ---------------------------------------------------- */}
         <Panel className="overflow-hidden">
-          <SectionTitle hint="AI is optional — everything core works without it">Model</SectionTitle>
+          <SectionTitle hint="AI is optional: everything core works without it">Model</SectionTitle>
           <div className="space-y-3 px-4 pb-4">
             <div className="grid gap-1.5">
               {(capabilities?.ai_modes ?? []).map((m: any) => (
@@ -91,20 +88,16 @@ export default function Settings() {
                     {m.default && <Chip>default</Chip>}
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-ink-3">{m.description}</p>
-                  {m.compliance_note && (
-                    <p className="rounded-md mt-1.5 flex gap-1.5 border border-flaky/25 bg-flaky/[0.07] p-1.5 text-[10.5px] leading-relaxed text-flaky">
-                      <Lock size={11} className="mt-px shrink-0" />
-                      {m.compliance_note}
-                    </p>
-                  )}
                 </button>
               ))}
             </div>
 
+            {mode !== 'no_ai' && <RoleModels />}
+
             {mode !== 'no_ai' && (
               <div className="space-y-2 border-t border-line pt-3">
                 <Field label="Provider">
-                  <select
+                  <select aria-label="Model provider"
                     value={provider}
                     onChange={(e) => setProvider(e.target.value)}
                     className="rounded-lg w-full border border-line bg-surface-2 px-2.5 py-1.5 text-[12px] outline-none focus:border-accent/40"
@@ -152,7 +145,7 @@ export default function Settings() {
                   health.status === 'ready' ? 'text-pass' : health.status === 'no_ai_mode' ? 'text-ink-3' : 'text-fail',
                 )}>
                   {health.status === 'ready' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                  {health.status}{health.detail ? ` — ${health.detail}` : ''}
+                  {health.status}{health.detail ? `: ${health.detail}` : ''}
                 </span>
               )}
             </div>
@@ -162,28 +155,10 @@ export default function Settings() {
         <ApiKeys keys={keys} usage={usage} onChange={load} />
 
         {/* --- integrations ---------------------------------------------- */}
-        <Panel className="overflow-hidden">
-          <SectionTitle hint="credentials are sealed in the vault and never returned by the API">
-            Integrations
-          </SectionTitle>
-          <div className="border-t border-line">
-            {providers.map((p) => {
-              const connection = connections.find((c) => c.provider === p.provider);
-              return (
-                <div key={p.provider} className="flex items-center gap-3 border-b border-line/60 px-4 py-2.5 last:border-0">
-                  <Plug size={13} className={connection ? 'text-pass' : 'text-ink-3'} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[12.5px] text-ink">{p.label}</p>
-                    <p className="truncate text-[10.5px] text-ink-3">{p.help}</p>
-                  </div>
-                  {connection
-                    ? <Chip tone={connection.status === 'connected' ? 'good' : 'warn'}>{connection.status}</Chip>
-                    : <Chip>not connected</Chip>}
-                </div>
-              );
-            })}
-          </div>
-        </Panel>
+        <IntegrationsPanel />
+
+        {/* --- webhooks -------------------------------------------------- */}
+        <WebhooksPanel />
       </div>
 
       <div className="space-y-3">
@@ -203,8 +178,29 @@ export default function Settings() {
             </div>
             <Row label="Approval mode" value={settings.governance.approval_mode} />
             <Row label="Gated actions" value={`${capabilities?.approval_actions.length ?? 0}`} />
-            <Row label="Telemetry" value={settings.telemetry_enabled ? 'on' : 'off — and off by default'} />
+            <Row label="Telemetry" value={settings.telemetry_enabled ? 'on' : 'off, and off by default'} />
             <Row label="Web research" value={settings.ai.web_research_enabled ? 'enabled' : 'disabled (opt-in)'} />
+            <div className="flex items-center justify-between py-1 text-[12px]">
+              <span className="text-ink-3">Enterprise readiness</span>
+              <a
+                href="https://github.com/mrviind/galeqea/blob/main/docs/ENTERPRISE.md"
+                target="_blank" rel="noreferrer"
+                className="text-accent hover:underline">SSO · audit · SBOM checklist →</a>
+            </div>
+            {capabilities?.build && (
+              <>
+                <Row
+                  label="Build"
+                  value={`v${capabilities.build.version} · ${capabilities.build.sha}`}
+                />
+                <Row
+                  label="UI built"
+                  value={capabilities.build.built_at
+                    ? new Date(capabilities.build.built_at).toLocaleString()
+                    : '-'}
+                />
+              </>
+            )}
 
             {audit?.chain && (
               <div className={clsx(
@@ -233,10 +229,16 @@ export default function Settings() {
           </div>
         </Panel>
 
+        {/* --- environments ----------------------------------------------- */}
+        <EnvironmentsPanel />
+
+        {/* --- API tokens ------------------------------------------------- */}
+        <ApiTokensPanel />
+
         {/* --- audit trail ------------------------------------------------ */}
         <Panel className="overflow-hidden">
           <SectionTitle hint="append-only, hash-chained">Recent activity</SectionTitle>
-          <div className="max-h-[360px] overflow-y-auto border-t border-line">
+          <div tabIndex={0} className="max-h-[360px] overflow-y-auto border-t border-line">
             {(audit?.events ?? []).length === 0 && <Empty title="No activity yet" />}
             {(audit?.events ?? []).map((event: any) => (
               <div key={event.seq} className="flex items-baseline gap-2 border-b border-line/60 px-4 py-1.5 last:border-0">
@@ -256,7 +258,7 @@ export default function Settings() {
           <SectionTitle hint={`${capabilities?.tools.length ?? 0} tools · also exposed over MCP`}>
             Agent capabilities
           </SectionTitle>
-          <div className="max-h-[300px] overflow-y-auto border-t border-line">
+          <div tabIndex={0} className="max-h-[300px] overflow-y-auto border-t border-line">
             {(capabilities?.tools ?? []).map((tool) => (
               <div key={tool.name} className="flex items-baseline gap-2 border-b border-line/60 px-4 py-1.5 last:border-0">
                 <span className="mono shrink-0 text-[10.5px] text-ink-2">{tool.name}</span>
@@ -295,6 +297,90 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+
+// --------------------------------------------------------------------------- //
+/**
+ * Per-role model routing (WO#8-C).
+ *
+ * The whole point of GaleQEA is that a green re-run costs nothing. When the model
+ * *is* in the loop (building a step, healing a broken locator, judging a verdict),
+ * the roles have wildly different needs: locating wants a cheap, fast model; judging
+ * wants a careful one. This routes each role to its own model so you pay frontier
+ * prices only where they earn their keep. Blank = inherit the provider default.
+ */
+const ROLE_ROWS: { key: string; label: string; hint: string }[] = [
+  { key: 'planner', label: 'Planner', hint: 'authoring & exploration (reasoning)' },
+  { key: 'grounder', label: 'Grounder', hint: 'locating & self-healing (cheap/fast)' },
+  { key: 'judge', label: 'Judge', hint: 'verdicts & RCA (careful)' },
+];
+
+function RoleModels() {
+  const [open, setOpen] = useState(false);
+  const [models, setModels] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get<any>('/api/settings/role-models');
+      setModels(r.role_models || {});
+      setSaved(r.role_models || {});
+    } catch { /* provider not configured yet, leave blank */ }
+  }, []);
+  useEffect(() => { if (open) void load(); }, [open, load]);
+
+  const dirty = JSON.stringify(models) !== JSON.stringify(saved);
+
+  async function save() {
+    setSaving(true); setMsg('');
+    try {
+      const r = await api.post<any>('/api/settings/role-models', { role_models: models });
+      setSaved(r.role_models || {});
+      setModels(r.role_models || {});
+      setMsg('routing saved');
+    } catch (e: any) {
+      setMsg(e?.message || 'could not save');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="border-t border-line pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="text-[11px] font-medium text-ink-2">Per-role model routing</span>
+        <span className="text-[10px] text-ink-3">{open ? 'hide' : 'a cheaper model for locating →'}</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {ROLE_ROWS.map((r) => (
+            <div key={r.key} className="grid grid-cols-[92px_1fr] items-center gap-2">
+              <div className="leading-tight">
+                <div className="text-[11.5px] text-ink-2">{r.label}</div>
+                <div className="text-[9.5px] text-ink-3">{r.hint}</div>
+              </div>
+              <input
+                value={models[r.key] || ''}
+                onChange={(e) => setModels((m) => ({ ...m, [r.key]: e.target.value }))}
+                placeholder="inherit default"
+                className="rounded-lg w-full border border-line bg-surface-2 px-2.5 py-1.5 text-[12px] outline-none placeholder:text-ink-3 focus:border-accent/40"
+              />
+            </div>
+          ))}
+          <div className="flex items-center gap-2 pt-0.5">
+            <Button variant="ghost" onClick={save} disabled={saving || !dirty}>
+              {saving ? <Spinner /> : null} Save routing
+            </Button>
+            {msg && <span className="text-[11px] text-ink-3">{msg}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // --------------------------------------------------------------------------- //
 /**
@@ -369,7 +455,7 @@ function ApiKeys({ keys, usage, onChange }: { keys: any[]; usage: any; onChange:
       {adding && (
         <div className="mx-4 mb-3 space-y-2 rounded-lg border border-line bg-surface-2 p-3">
           <div className="flex gap-2">
-            <select
+            <select aria-label="Key provider"
               value={draft.provider}
               onChange={(e) => setDraft({ ...draft, provider: e.target.value })}
               className="rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
@@ -395,7 +481,7 @@ function ApiKeys({ keys, usage, onChange }: { keys: any[]; usage: any; onChange:
             type="password"
             value={draft.api_key}
             onChange={(e) => { setDraft({ ...draft, api_key: e.target.value }); setProbe(null); }}
-            placeholder="API key — sealed in the local vault, never sent anywhere else"
+            placeholder="API key (sealed in the local vault, never sent anywhere else)"
             className="w-full rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-[12px] outline-none placeholder:text-ink-3 focus:border-accent"
           />
           <div className="flex flex-wrap items-center gap-3">
@@ -420,7 +506,7 @@ function ApiKeys({ keys, usage, onChange }: { keys: any[]; usage: any; onChange:
 
           {probe && (
             <p className={clsx('text-[11.5px]', probe.ok ? 'text-pass' : 'text-fail')}>
-              {probe.ok ? 'The provider answered — this key works.' : probe.error}
+              {probe.ok ? 'The provider answered. This key works.' : probe.error}
             </p>
           )}
           {error && <p className="text-[11.5px] text-fail">{error}</p>}
@@ -434,7 +520,7 @@ function ApiKeys({ keys, usage, onChange }: { keys: any[]; usage: any; onChange:
             </Button>
           </div>
           <p className="text-[10.5px] leading-relaxed text-ink-3">
-            The key is probed against the provider before it is stored — a key that
+            The key is probed against the provider before it is stored. A key that
             does not work is refused here rather than failing in the middle of a
             scheduled run at 2am.
           </p>
@@ -490,7 +576,7 @@ function ApiKeys({ keys, usage, onChange }: { keys: any[]; usage: any; onChange:
           <div className="flex items-center gap-2">
             <Coins size={12} className="text-ink-3" />
             <span className="text-[11px] font-medium text-ink-2">
-              Last 30 days — ${usage.cost_usd} across {usage.calls} call(s)
+              Last 30 days: ${usage.cost_usd} across {usage.calls} call(s)
             </span>
           </div>
           <div className="mt-1.5 space-y-0.5">
@@ -500,6 +586,132 @@ function ApiKeys({ keys, usage, onChange }: { keys: any[]; usage: any; onChange:
                 <span className="mono">{stats.calls}×</span>
                 <span className="mono">{(stats.input_tokens + stats.output_tokens).toLocaleString()} tok</span>
                 <span className="mono ml-auto">${stats.cost_usd}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+
+/** Outbound webhooks: register endpoints, and see the delivery log. Signed with
+ *  HMAC-SHA256 (Standard Webhooks); the secret is shown exactly once. */
+function WebhooksPanel() {
+  const { project } = useApp();
+  const [hooks, setHooks] = useState<any[]>([]);
+  const [events, setEvents] = useState<string[]>([]);
+  const [deliveries, setDeliveries] = useState<any[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [url, setUrl] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [secret, setSecret] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!project) return;
+    const list = await api.get<any>(`/api/projects/${project.id}/webhooks`);
+    setHooks(list.webhooks);
+    setEvents(list.available_events);
+    const log = await api.get<any>(`/api/projects/${project.id}/webhooks/deliveries`);
+    setDeliveries(log.deliveries);
+  }, [project]);
+  useEffect(() => { load().catch(() => { /* panel still renders */ }); }, [load]);
+
+  const add = async () => {
+    if (!project || !url.trim() || !selected.length) return;
+    setBusy(true);
+    try {
+      const created = await api.post<any>(`/api/projects/${project.id}/webhooks`,
+        { url: url.trim(), events: selected });
+      setSecret(created.secret);
+      setUrl(''); setSelected([]); setAdding(false);
+      await load();
+    } finally { setBusy(false); }
+  };
+  const remove = async (id: string) => {
+    if (!project) return;
+    await api.del(`/api/projects/${project.id}/webhooks/${id}`);
+    await load();
+  };
+  const toggle = (e: string) =>
+    setSelected((s) => (s.includes(e) ? s.filter((x) => x !== e) : [...s, e]));
+
+  return (
+    <Panel className="overflow-hidden">
+      <SectionTitle
+        hint="signed HMAC-SHA256 (Standard Webhooks) · secret shown once"
+        action={
+          <Button size="sm" variant={adding ? 'ghost' : 'primary'} onClick={() => setAdding((v) => !v)}>
+            {adding ? <XCircle size={11} /> : <Plus size={11} />} {adding ? 'Cancel' : 'Add webhook'}
+          </Button>
+        }
+      >
+        Webhooks
+      </SectionTitle>
+
+      {secret && (
+        <div className="mx-4 mt-3 rounded-lg border border-flaky/30 bg-flaky/[0.07] p-2.5 text-[11px] leading-relaxed text-flaky">
+          Secret (shown once, store it now): <code className="mono break-all">{secret}</code>
+        </div>
+      )}
+
+      {adding && (
+        <div className="mx-4 mt-3 space-y-2 rounded-lg border border-line bg-surface-2 p-3">
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://your-endpoint/hook"
+            className="w-full rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {events.map((e) => (
+              <button
+                key={e}
+                onClick={() => toggle(e)}
+                className={clsx('rounded-sm border px-2 py-0.5 text-[10.5px] transition',
+                  selected.includes(e) ? 'border-accent/40 bg-accent/10 text-accent' : 'border-line text-ink-3 hover:text-ink-2')}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+          <Button size="sm" variant="primary" onClick={add} disabled={busy || !url.trim() || !selected.length}>
+            Create
+          </Button>
+        </div>
+      )}
+
+      <div className="border-t border-line">
+        {hooks.length === 0 && (
+          <Empty icon={<Plug size={20} />} title="No webhooks"
+            body="POST run.finished / run.failed / heal.proposed / approval.requested to an external endpoint." />
+        )}
+        {hooks.map((h) => (
+          <div key={h.id} className="flex items-center gap-2 border-b border-line/60 px-4 py-2.5 last:border-0">
+            <Plug size={13} className={h.active ? 'text-pass' : 'text-ink-3'} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] text-ink">{h.url}</p>
+              <p className="truncate text-[10.5px] text-ink-3">{(h.events || []).join(', ')} · secret {h.secret_hint}</p>
+            </div>
+            <button onClick={() => remove(h.id)} title="Delete" className="p-1 text-ink-3 transition hover:text-fail">
+              <Trash2 size={11} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {deliveries.length > 0 && (
+        <div className="border-t border-line px-4 py-2">
+          <p className="mb-1 text-[10.5px] uppercase tracking-wide text-ink-3">Recent deliveries</p>
+          <div className="max-h-40 space-y-0.5 overflow-y-auto">
+            {deliveries.slice(0, 20).map((d) => (
+              <div key={d.id} className="flex items-baseline gap-2 text-[10.5px]">
+                <Chip tone={d.status === 'delivered' ? 'good' : 'danger'}>{d.status}</Chip>
+                <span className="mono text-ink-2">{d.event}</span>
+                <span className="text-ink-3">{d.attempts}×{d.response_code ? ` · ${d.response_code}` : ''}</span>
+                <span className="ml-auto truncate text-ink-3">{d.error}</span>
               </div>
             ))}
           </div>

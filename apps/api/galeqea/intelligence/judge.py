@@ -55,9 +55,22 @@ async def judge_step(
     aria_snapshot: str,
     url: str = "",
     step_index: int = 0,
+    state_tokens: int = 0,
 ) -> dict:
     if provider is None:
         return {"ok": False, "reason": "no model configured; assertion left unverified"}
+
+    # Per-role ceiling (WO#8-C): a judge call that would run past its per-call
+    # token cap stops and asks rather than spending. Checked before any of the
+    # SAMPLES calls, so nothing is spent when it trips.
+    from ..ai import keys as _keys
+    from ..config import settings as _cfg
+    _est = int(state_tokens or 0) or (len(aria_snapshot) // 4)
+    try:
+        _keys.check_role_ceiling(db, provider=_cfg.provider, project_id=project_id,
+                                 bucket="judge", est_tokens=_est + 400)
+    except _keys.RoleCeilingExceeded as exc:
+        return {"ok": False, "reason": str(exc), "ceiling": True}
 
     prompt = (
         f"Expectation: {question}\n"

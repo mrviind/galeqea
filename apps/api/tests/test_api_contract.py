@@ -78,7 +78,7 @@ def test_every_operation_gets_a_contract_test(spec):
 
 def test_the_contract_test_asserts_the_response_schema(spec):
     proposals = openapi.generate(spec, seed="t")
-    step = next(p for p in proposals if p["title"].startswith("GET /orders —"))["steps"][0]
+    step = next(p for p in proposals if p["title"].startswith("GET /orders: contract"))["steps"][0]
     assert step["value"]["expect_status"] == 200
     assert step["value"]["expect_schema"]["required"] == ["items", "total"]
 
@@ -97,14 +97,14 @@ def test_required_body_fields_get_their_own_negative_test(spec):
 def test_secured_operations_get_an_unauthenticated_test(spec):
     proposals = openapi.generate(spec, seed="t")
     auth = [p for p in proposals if "unauthenticated" in p["title"]]
-    assert {p["title"].split(" —")[0] for p in auth} == {"GET /orders", "POST /orders"}
+    assert {p["title"].split(": ")[0] for p in auth} == {"GET /orders", "POST /orders"}
     assert auth[0]["steps"][0]["value"]["expect_status_in"] == [401, 403]
     assert "Authorization" not in auth[0]["steps"][0]["value"]["headers"]
 
 
 def test_public_operations_get_no_auth_test(spec):
     proposals = openapi.generate(spec, seed="t")
-    assert not any("GET /orders/{orderId} — rejects an unauthenticated" in p["title"]
+    assert not any("GET /orders/{orderId}: rejects an unauthenticated" in p["title"]
                    for p in proposals)
 
 

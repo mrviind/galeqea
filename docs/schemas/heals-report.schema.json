@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galeqea.dev/schemas/heals-report.schema.json",
+  "title": "GaleQEA heals report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report",
+    "project_id",
+    "href",
+    "summary",
+    "heals"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "report": {
+      "const": "heals"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "href": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total",
+        "by_status",
+        "by_strategy"
+      ]
+    },
+    "heals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "href",
+          "ui_href",
+          "strategy",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "ui_href": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

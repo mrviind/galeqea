@@ -5,7 +5,7 @@ import { clock } from '../../lib/format';
 import { useWorkspace } from '../../workspace';
 import { EmptyPane } from './EmptyPane';
 
-/** [RCA Telemetry] — a terminal-style view of the last execution. */
+/** [RCA Telemetry]: a terminal-style view of the last execution. */
 export function RCATelemetry() {
   const { activeTelemetry, activeReview, clearPane } = useWorkspace();
   const bottom = useRef<HTMLDivElement>(null);

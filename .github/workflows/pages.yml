@@ -1,0 +1,67 @@
+name: Landing site
+
+# Builds and validates the static landing site in docs/site on every push/PR.
+# It does NOT deploy: publishing to GitHub Pages happens only when a maintainer
+# runs this workflow manually (workflow_dispatch) after enabling Pages. That keeps
+# the front door off the public internet until the project owner chooses to ship it.
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/site/**", ".github/workflows/pages.yml"]
+  pull_request:
+    paths: ["docs/site/**"]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Publish to GitHub Pages"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the static site
+        run: |
+          set -e
+          test -f docs/site/index.html
+          test -f docs/site/favicon.svg
+          test -f docs/site/og.svg
+          # Fail if a required section anchor went missing.
+          for id in how testing cost managers tools; do
+            grep -q "id=\"$id\"" docs/site/index.html || { echo "missing section #$id"; exit 1; }
+          done
+          # A framework default favicon must never ship (repo rule).
+          if grep -qiE 'vite\.svg|next.*triangle|react_logo|cra' docs/site/index.html; then
+            echo "framework default favicon detected"; exit 1; fi
+          # The hero must stay a light video, not a multi-MB GIF (LCP budget).
+          test -f docs/site/hero.webm || { echo "hero.webm missing (run make hero)"; exit 1; }
+          if [ -f docs/site/hero.gif ]; then echo "hero.gif must not ship, use the video"; exit 1; fi
+          webm_kb=$(( $(wc -c < docs/site/hero.webm) / 1024 ))
+          echo "hero.webm ${webm_kb} KB"
+          [ "$webm_kb" -le 500 ] || { echo "hero.webm over 500 KB budget"; exit 1; }
+          echo "landing site OK"
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/site
+
+  deploy:
+    # Manual only, and only when the maintainer opts in.
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import {
   CalendarClock, History, Layers, Pause, Play, Plus, Trash2, X,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, releases } from '../lib/api';
 import type { RunSummary } from '../lib/api';
 import { duration, relative } from '../lib/format';
 import { useApp, useEvents } from '../state';
@@ -48,34 +48,73 @@ function HistoryTab() {
   const { project } = useApp();
   const navigate = useNavigate();
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [envs, setEnvs] = useState<{ id: string; name: string }[]>([]);
+  const [miles, setMiles] = useState<{ id: string; version: string }[]>([]);
+  const [env, setEnv] = useState('');
+  const [milestone, setMilestone] = useState('');
 
   const load = useCallback(() => {
     if (!project) return;
-    api.get<RunSummary[]>(`/api/projects/${project.id}/runs?limit=100`).then(setRuns).catch(() => {});
-  }, [project]);
+    const qs = new URLSearchParams({ limit: '100' });
+    if (env) qs.set('environment', env);
+    if (milestone) qs.set('milestone_id', milestone);
+    api.get<RunSummary[]>(`/api/projects/${project.id}/runs?${qs}`).then(setRuns).catch(() => {});
+  }, [project, env, milestone]);
 
   useEffect(load, [load]);
+  useEffect(() => {
+    if (!project) return;
+    releases.environments(project.id).then((r) => setEnvs(r.environments), () => {});
+    releases.list(project.id).then((r) => setMiles(r.milestones), () => {});
+  }, [project]);
   useEvents(['run.queued', 'run.finished', 'run.started'], load);
 
+  const filterSelect = 'rounded-md border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-2 outline-none focus:border-accent';
   return (
     <Panel className="overflow-hidden">
-      <SectionTitle hint={`${runs.length} run(s)`}>Run history</SectionTitle>
+      <SectionTitle hint={`${runs.length} run(s)`} action={
+        <div className="flex items-center gap-1.5">
+          <select aria-label="Filter by release" className={filterSelect} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
+            <option value="">All releases</option>
+            {miles.map((m) => <option key={m.id} value={m.id}>{m.version}</option>)}
+          </select>
+          <select aria-label="Filter by environment" className={filterSelect} value={env} onChange={(e) => setEnv(e.target.value)}>
+            <option value="">All environments</option>
+            {envs.map((e) => <option key={e.id} value={e.name}>{e.name}</option>)}
+          </select>
+        </div>
+      }>Run history</SectionTitle>
       {runs.length === 0 && <Empty title="No runs yet" body="Runs appear here the moment one starts." />}
       <div className="border-t border-line">
         {runs.map((run) => {
           const totals = run.totals ?? {};
+          const parentNum = (run as { parent_run_number?: number }).parent_run_number;
+          const rerunKind = (run as { rerun_kind?: string }).rerun_kind;
+          const attempt = (run as { attempt?: number }).attempt;
           return (
             <button
               key={run.id}
               onClick={() => navigate(`/runs/${run.id}`)}
-              className="flex w-full items-center gap-3 border-b border-line/60 px-4 py-2.5 text-left
-                         transition last:border-0 hover:bg-surface-2"
+              className={`flex w-full items-center gap-3 border-b border-line/60 py-2.5 text-left
+                         transition last:border-0 hover:bg-surface-2 ${parentNum ? 'border-l-2 border-l-accent/40 pl-3 pr-4' : 'px-4'}`}
             >
               <StatusPill status={run.status} live={run.status === 'running'} />
+              {run.status === 'queued' && run.queue_position ? (
+                <span className="mono shrink-0 rounded bg-surface-2 px-1.5 text-[10.5px] text-ink-3">
+                  position {run.queue_position}
+                </span>
+              ) : null}
               <span className="mono w-10 shrink-0 text-ink-3">#{run.number}</span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[12.5px] text-ink">{run.title}</p>
-                <p className="truncate text-[11px] text-ink-3">
+                <p className="truncate text-[12.5px] text-ink">
+                  {parentNum ? <span className="text-ink-3">↳ </span> : null}{run.title}
+                </p>
+                <p className="flex items-center gap-1.5 truncate text-[11px] text-ink-3">
+                  {parentNum ? (
+                    <span className="rounded bg-surface-2 px-1.5 text-accent">
+                      rerun of #{parentNum}{rerunKind === 'x3' && attempt ? ` · ${attempt}/3` : rerunKind ? ` · ${rerunKind}` : ''}
+                    </span>
+                  ) : null}
                   {run.headline || `${run.trigger} · ${run.environment}`}
                 </p>
               </div>
@@ -184,13 +223,13 @@ function SuitesTab() {
                        outline-none placeholder:text-ink-3 focus:border-accent"
           />
           <div className="flex gap-2">
-            <select
+            <select aria-label="Test type"
               value={draft.kind}
               onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
               className="rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-[12px] outline-none focus:border-accent"
             >
-              <option value="dynamic">dynamic — a saved query</option>
-              <option value="static">static — a fixed list</option>
+              <option value="dynamic">dynamic (a saved query)</option>
+              <option value="static">static (a fixed list)</option>
             </select>
             {draft.kind === 'dynamic' && (
               <input
@@ -361,7 +400,7 @@ function SchedulesTab() {
               className="mono w-40 rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-[12px]
                          outline-none placeholder:text-ink-3 focus:border-accent"
             />
-            <select
+            <select aria-label="Suite"
               value={draft.suite_id}
               onChange={(e) => setDraft({ ...draft, suite_id: e.target.value })}
               className="min-w-0 flex-1 rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-[12px]

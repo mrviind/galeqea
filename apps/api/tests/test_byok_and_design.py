@@ -182,7 +182,7 @@ def test_the_budget_blocks_before_the_request_not_after(db, project):
 
 
 def test_an_exhausted_budget_degrades_with_the_real_reason(db, project):
-    """Not "no model configured" — that sends the user to the wrong setting."""
+    """Not "no model configured"; that sends the user to the wrong setting."""
     from galeqea.ai.providers.registry import for_project
     from galeqea.config import AIMode, settings
     from galeqea.models import UsageLedger

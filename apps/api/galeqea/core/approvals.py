@@ -49,6 +49,10 @@ RISK_MIN_ROLE: dict[str, Role] = {
 #: Default risk classification per action. Anything unlisted is treated as HIGH,
 #: so a newly added action fails closed rather than open.
 ACTION_RISK: dict[str, RiskTier] = {
+    "plan.approve": RiskTier.LOW,
+    "milestone.create": RiskTier.LOW,
+    "milestone.archive": RiskTier.LOW,
+    "milestone.delete": RiskTier.HIGH,
     "test.create": RiskTier.MEDIUM,
     "test.update": RiskTier.MEDIUM,
     "test.approve": RiskTier.MEDIUM,
@@ -61,7 +65,12 @@ ACTION_RISK: dict[str, RiskTier] = {
     "schedule.create": RiskTier.MEDIUM,
     "run.start": RiskTier.LOW,
     "jira.create_issue": RiskTier.HIGH,
+    "defect.create": RiskTier.HIGH,
+    "story.import": RiskTier.LOW,
+    "jira.writeback": RiskTier.MEDIUM,
     "xray.push_results": RiskTier.HIGH,
+    "results.push": RiskTier.HIGH,
+    "report.publish": RiskTier.MEDIUM,
     "git.commit": RiskTier.HIGH,
     "git.open_pr": RiskTier.HIGH,
     "ci.trigger": RiskTier.HIGH,
@@ -91,6 +100,7 @@ def _ensure_appliers() -> None:
         return
     _appliers_loaded = True
     from ..ai import toolset  # noqa: F401
+    from ..services import plan_approval  # noqa: F401  (registers plan.approve)
 
 
 def applier(action: str) -> Callable[[Applier], Applier]:

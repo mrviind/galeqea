@@ -77,7 +77,7 @@ export default function Intelligence() {
 
       {tab === 'flaky' && (
         <Panel className="overflow-hidden">
-          <SectionTitle hint="score and confidence are separate — a score with no history behind it means little">
+          <SectionTitle hint="score and confidence are separate: a score with no history behind it means little">
             Test stability
           </SectionTitle>
           <div className="border-t border-line">
@@ -133,7 +133,7 @@ export default function Intelligence() {
 
       {tab === 'heals' && (
         <Panel className="overflow-hidden">
-          <SectionTitle hint="a heal repairs every test that references the element — never applied silently">
+          <SectionTitle hint="a heal repairs every test that references the element, never applied silently">
             Proposed heals
           </SectionTitle>
           <div className="border-t border-line">
@@ -229,7 +229,7 @@ export default function Intelligence() {
                 <Empty
                   icon={<Boxes size={20} />}
                   title="No app model yet"
-                  body="Run a test and this fills itself in. GaleQEA records every screen and element a run touches, so healing repairs an element once — for every test that uses it."
+                  body="Run a test and this fills itself in. GaleQEA records every screen and element a run touches, so healing repairs an element once, for every test that uses it."
                 />
               )}
               {(appModel.screens ?? []).map((screen: any) => (
@@ -284,7 +284,7 @@ export default function Intelligence() {
  * Autonomous exploratory testing.
  *
  * Exploration answers a different question from a test: not "does this still do
- * what we agreed?" but "what does this do that we never agreed about?" — so the
+ * what we agreed?" but "what does this do that we never agreed about?" So the
  * output is findings to triage, not a verdict, and it is kept out of the
  * pass-rate statistics where it would mean nothing.
  */
@@ -408,7 +408,7 @@ function ExploreTab({
               rows={2}
               value={charter}
               onChange={(e) => setCharter(e.target.value)}
-              placeholder="Charter — e.g. probe the checkout form for input it silently discards"
+              placeholder="Charter (e.g. probe the checkout form for input it silently discards)"
               className="w-full resize-none rounded-lg border border-line bg-surface-2 px-2.5 py-2
                          text-[12px] outline-none placeholder:text-ink-3 focus:border-accent"
             />
@@ -433,8 +433,8 @@ function ExploreTab({
               <span>
                 Allow transactional controls (pay, place order, transfer).
                 <span className="block text-ink-3/80">
-                  Never enable this against production. Destructive controls — delete,
-                  revoke, sign out — stay blocked either way.
+                  Never enable this against production. Destructive controls (delete,
+                  revoke, sign out) stay blocked either way.
                 </span>
               </span>
             </label>
@@ -608,7 +608,7 @@ function VisualTab({ data, onChange }: { data: any; onChange: () => void }) {
                   ))}
                 </ul>
                 <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-3">
-                  This changed only {current.changed_pct}% of the image — small enough that
+                  This changed only {current.changed_pct}% of the image, small enough that
                   a pixel threshold loose enough to ignore anti-aliasing would have missed it.
                 </p>
               </div>
@@ -664,7 +664,7 @@ function VisualTab({ data, onChange }: { data: any; onChange: () => void }) {
                            text-[12px] outline-none placeholder:text-ink-3 focus:border-accent"
               />
               <Button variant="primary" size="sm" onClick={() => decide('accept')} disabled={busy}>
-                <Check size={11} /> This is correct — make it the baseline
+                <Check size={11} /> This is correct, make it the baseline
               </Button>
               <Button variant="ghost" size="sm" onClick={() => decide('reject')} disabled={busy}>
                 <X size={11} /> This is a defect
@@ -682,7 +682,7 @@ function VisualTab({ data, onChange }: { data: any; onChange: () => void }) {
           <Empty
             icon={<Eye size={22} />}
             title="No comparison selected"
-            body="Screens that did not change are recorded as auto-passed and stay out of this queue — a review list padded with non-events is one people stop reading."
+            body="Screens that did not change are recorded as auto-passed and stay out of this queue. A review list padded with non-events is one people stop reading."
           />
         </Panel>
       )}

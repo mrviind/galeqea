@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import clsx from 'clsx';
 import {
-  ArrowLeft, Ban, ChevronRight, Download, RotateCw, Sparkles, Target, Wrench,
+  ArrowLeft, Ban, Bug, ChevronRight, Download, RotateCw, Sparkles, Target, Wrench,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, defects } from '../lib/api';
 import type { RunDetail as RunDetailType, RunResult } from '../lib/api';
 import { duration } from '../lib/format';
 import { useApp, useEvents } from '../state';
 import { LiveLog } from '../components/LiveLog';
+import { ReportExport } from '../components/ReportExport';
 import { Button, Chip, Empty, Panel, SectionTitle, Spinner, StatusPill } from '../components/primitives';
 
 export default function RunDetail() {
@@ -20,6 +21,8 @@ export default function RunDetail() {
   const [steps, setSteps] = useState<any[]>([]);
   const [rca, setRca] = useState<any | null>(null);
   const [rcaBusy, setRcaBusy] = useState(false);
+  const [bugBusy, setBugBusy] = useState(false);
+  const [bugMsg, setBugMsg] = useState('');
 
   const load = useCallback(() => {
     if (!project || !runId) return;
@@ -46,6 +49,19 @@ export default function RunDetail() {
     } finally { setRcaBusy(false); }
   };
 
+  const fileBug = async () => {
+    if (!project || !selected) return;
+    setBugBusy(true); setBugMsg('');
+    try {
+      const res = await defects.propose(project.id, selected.id);
+      setBugMsg(`Queued a ${res.provider} bug. Approval ${res.approval_id} is waiting in Approvals.`);
+    } catch (e: any) {
+      setBugMsg(e?.message?.includes('409') || /tracker/i.test(e?.message || '')
+        ? 'No issue tracker connected. Add Jira, GitHub or GitLab in Settings → Integrations.'
+        : (e?.message || 'Could not file a bug.'));
+    } finally { setBugBusy(false); }
+  };
+
   const rerun = async (failedOnly: boolean) => {
     if (!project || !runId) return;
     const res = await api.post<any>(`/api/projects/${project.id}/runs/${runId}/rerun`, { failed_only: failedOnly });
@@ -64,12 +80,12 @@ export default function RunDetail() {
     <div className="space-y-3 p-3">
       {/* --- header ------------------------------------------------------ */}
       <Panel glow={live} className="p-3">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={() => navigate('/runs')} className="rounded-lg p-1 text-ink-3 transition hover:bg-surface-2 hover:text-ink">
             <ArrowLeft size={15} />
           </button>
           <StatusPill status={run.status} live={live} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="truncate text-[14px] font-semibold">Run #{run.number} · {run.title}</h1>
             <p className="truncate text-[11px] text-ink-3">
               {run.trigger} · {run.environment} · {run.base_url} · {(run.browsers ?? []).join(', ')}
@@ -77,7 +93,26 @@ export default function RunDetail() {
             </p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {(() => {
+              // The cost ticker makes "pay to build, not to re-run" visible: a run's
+              // own model spend (in-run healing/RCA only; execution uses none).
+              const u = detail.model_usage ?? { calls: 0, tokens: 0, cost_usd: 0, cache_hits: 0, heals: 0 };
+              const free = u.cost_usd === 0 && u.tokens === 0;
+              const cache = u.heals > 0 ? ` · cache ${u.cache_hits}/${u.heals}` : '';
+              return (
+                <span
+                  title={free
+                    ? `This run called no model. Re-running costs nothing.${u.heals ? ` ${u.cache_hits}/${u.heals} heals resolved from the step cache (zero tokens).` : ''}`
+                    : `${u.calls} model call(s) during healing/RCA`}
+                  className={clsx('rounded-full mono mr-1 border px-2 py-0.5 text-[10.5px] tabular-nums',
+                    free ? 'border-pass/30 bg-pass/[0.08] text-pass' : 'border-line bg-surface-2 text-ink-2')}>
+                  {free ? `$0.00 · 0 tokens · free re-run${cache}`
+                    : `$${u.cost_usd.toFixed(4)} · ${u.tokens.toLocaleString()} tokens${cache}`}
+                </span>
+              );
+            })()}
             <span className="mono mr-1 text-[11px] text-ink-3">{duration(run.duration_ms)}</span>
+            {project && <ReportExport base={`/api/projects/${project.id}/runs/${run.id}`} name={`run-${run.number}`} junit word excel />}
             <Button size="sm" onClick={() => rerun(false)}><RotateCw size={11} /> Run again</Button>
             <Button size="sm" onClick={() => rerun(true)} disabled={!results.some((r) => ['failed', 'error'].includes(r.status))}>
               <Target size={11} /> Only failed
@@ -111,6 +146,26 @@ export default function RunDetail() {
             return <Chip key={key} tone={tone as any}>{list.length} {String(key).replace('_', ' ')}</Chip>;
           })}
         </div>
+
+        {(detail.by_test_type?.length ?? 0) > 0 && (
+          <div className="mt-3 space-y-1.5 border-t border-line pt-3">
+            <p className="text-[10.5px] font-medium uppercase tracking-wide text-ink-3">Coverage by type</p>
+            {detail.by_test_type!.map((g) => (
+              <div key={g.type} className="flex items-center gap-2.5">
+                <span className="w-28 shrink-0 truncate text-[11.5px] text-ink-2">{g.label}</span>
+                <div className="flex h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-3">
+                  {g.passed > 0 && <span className="h-full bg-pass" style={{ width: `${(g.passed / g.total) * 100}%` }} />}
+                  {g.failed > 0 && <span className="h-full bg-fail" style={{ width: `${(g.failed / g.total) * 100}%` }} />}
+                  {g.skipped > 0 && <span className="h-full bg-skip" style={{ width: `${(g.skipped / g.total) * 100}%` }} />}
+                </div>
+                <span className="mono w-24 shrink-0 text-right text-[10.5px] text-ink-3 tabular-nums">
+                  {g.passed}✓ {g.failed > 0 && <span className="text-fail">{g.failed}✗ </span>}
+                  {g.skipped > 0 && <span>{g.skipped}⊘ </span>}· {g.total}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </Panel>
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -124,19 +179,28 @@ export default function RunDetail() {
                 key={result.id}
                 onClick={() => setSelected(result)}
                 className={clsx(
-                  'flex w-full items-center gap-2 border-b border-line/60 px-3 py-2 text-left transition last:border-0',
+                  'flex w-full items-start gap-2 border-b border-line/60 px-3 py-2 text-left transition last:border-0',
                   selected?.id === result.id ? 'bg-surface-2' : 'hover:bg-surface-2/60',
                 )}
               >
-                <StatusPill status={result.status} />
-                <span className="mono w-24 shrink-0 truncate text-ink-3">{result.key}</span>
-                <span className="min-w-0 flex-1 truncate text-[12px] text-ink-2">{result.title}</span>
-                {result.healed && <Wrench size={11} className="shrink-0 text-flaky" />}
+                <StatusPill status={result.status} className="mt-px" />
+                <span className="mono mt-px w-24 shrink-0 truncate text-ink-3">{result.key}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px] text-ink-2">{result.title}</span>
+                  {['skipped', 'blocked'].includes(result.status) && (
+                    // Why a test didn't run should never be a mystery you have to click for.
+                    <span className="mt-0.5 block truncate text-[10.5px] text-ink-3">
+                      {result.error_message
+                        || (result.status === 'blocked' ? 'waiting on a human handoff' : 'not run: no matching approved test or gated')}
+                    </span>
+                  )}
+                </span>
+                {result.healed && <Wrench size={11} className="mt-px shrink-0 text-flaky" />}
                 {result.classification && (
                   <Chip tone={result.classification === 'new' ? 'danger' : 'neutral'}>{result.classification}</Chip>
                 )}
-                <span className="mono w-12 shrink-0 text-right text-[10.5px] text-ink-3">{duration(result.duration_ms)}</span>
-                <ChevronRight size={12} className="shrink-0 text-ink-3" />
+                <span className="mono mt-px w-12 shrink-0 text-right text-[10.5px] text-ink-3">{duration(result.duration_ms)}</span>
+                <ChevronRight size={12} className="mt-px shrink-0 text-ink-3" />
               </button>
             ))}
           </div>
@@ -148,20 +212,61 @@ export default function RunDetail() {
             <SectionTitle
               hint={selected.key}
               action={
-                <Button size="sm" variant="ghost" onClick={analyze} disabled={rcaBusy}>
-                  {rcaBusy ? <Spinner /> : <Sparkles size={11} />} Explain this failure
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  {['failed', 'error'].includes(selected.status) && (
+                    <>
+                      <a
+                        href={`/api/projects/${project!.id}/runs/${runId}/results/${selected.id}/evidence.zip`}
+                        className="rounded-lg inline-flex items-center gap-1 border border-line bg-surface-2 px-2 py-1 text-[11px] text-ink-2 hover:text-ink">
+                        <Download size={11} /> Evidence
+                      </a>
+                      <Button size="sm" variant="ghost" onClick={fileBug} disabled={bugBusy}>
+                        {bugBusy ? <Spinner /> : <Bug size={11} />} File bug
+                      </Button>
+                    </>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={analyze} disabled={rcaBusy}>
+                    {rcaBusy ? <Spinner /> : <Sparkles size={11} />} Explain this failure
+                  </Button>
+                </div>
               }
             >
               {selected.title}
             </SectionTitle>
 
             <div className="min-h-0 flex-1 overflow-y-auto border-t border-line px-3 py-2">
+              {bugMsg && (
+                <p className="mb-2 rounded-md border border-accent/25 bg-accent/[0.06] px-2.5 py-1.5 text-[11px] text-ink-2">
+                  {bugMsg}
+                </p>
+              )}
               {selected.error_message && (
                 <pre className="rounded-md mono mb-3 whitespace-pre-wrap border border-fail/25 bg-fail/[0.06] p-2.5 text-[11px] leading-relaxed text-fail">
                   {selected.error_message}
                 </pre>
               )}
+
+              {(() => {
+                const shots = artifacts.filter(
+                  (a) => a.run_test_id === selected.id && ['screenshot', 'diff', 'snapshot'].includes(a.kind));
+                if (shots.length === 0) return null;
+                return (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {shots.map((a) => {
+                      const src = `/api/projects/${project!.id}/runs/${runId}/artifacts/${a.id}`;
+                      return (
+                        <a key={a.id} href={src} target="_blank" rel="noreferrer"
+                          className="rounded-md group relative block h-16 w-24 overflow-hidden border border-line hover:border-accent"
+                          title={a.label || a.kind}>
+                          <img src={src} alt={a.label || a.kind} loading="lazy"
+                            className="h-full w-full object-cover object-top" />
+                          <span className="absolute inset-x-0 bottom-0 bg-canvas/80 px-1 py-px text-[9px] text-ink-3">{a.kind}</span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
               {rca && <RcaPanel rca={rca} />}
 

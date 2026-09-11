@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest a capability — within the testing/QE scope.
+description: Suggest a capability, within the testing/QE scope.
 labels: ["type/feature", "needs-triage"]
 body:
   - type: markdown

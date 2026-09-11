@@ -6,7 +6,7 @@ import pytest
 
 from galeqea.intelligence import flaky, signatures
 from galeqea.intelligence.anomaly import robust_z
-from galeqea.models import RunStatus, TestStat
+from galeqea.models import TestStat
 
 
 # --------------------------------------------------------------------------- #

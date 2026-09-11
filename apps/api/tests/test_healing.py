@@ -175,8 +175,14 @@ def test_repaired_count_reflects_tests_not_heal_events(db, project):
     saves - which would make the payoff invisible in the one place it is shown.
     """
     from galeqea.models import (
-        AppElement, AppScreen, HealEvent, StepAction, TestCase,
-        TestCategory, TestStatus, TestStep,
+        AppElement,
+        AppScreen,
+        HealEvent,
+        StepAction,
+        TestCase,
+        TestCategory,
+        TestStatus,
+        TestStep,
     )
 
     screen = AppScreen(project_id=project.id, name="S", route_signature="/s")

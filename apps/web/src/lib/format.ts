@@ -22,7 +22,7 @@ export function statusMeta(status: string) {
 }
 
 export function duration(ms: number): string {
-  if (!ms) return '—';
+  if (!ms) return '-';
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   const m = Math.floor(ms / 60_000);
@@ -63,6 +63,25 @@ export function clock(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   });
+}
+
+/**
+ * A chat message's timestamp: the time alone for today, but prefixed with the
+ * date for any other day. A conversation that spans days would otherwise show a
+ * bare "06:16" above a bare "04:12" and read as if its clock ran backwards. The
+ * times are fine, it's the missing date that lies.
+ */
+export function chatStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) return time;
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time}`;
 }
 
 export function pct(value: number): string {

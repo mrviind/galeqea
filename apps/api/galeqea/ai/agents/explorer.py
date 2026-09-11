@@ -2,7 +2,7 @@
 
 Exploration answers a different question from a test. A test asks *"does this
 still do what we agreed?"*; exploration asks *"what does this do that we never
-agreed about?"* — so its output is findings a human triages, not a pass or fail.
+agreed about?"*, so its output is findings a human triages, not a pass or fail.
 
 Two strategies, both driving the same loop:
 
@@ -10,7 +10,7 @@ Two strategies, both driving the same loop:
   controls never touched, prefer actions that reach unseen screens, fill forms
   with boundary values, and back out of dead ends. It cannot judge whether a
   message is *confusing*, but it finds broken links, console errors, 5xx
-  responses, unlabelled controls, dead ends and lost form data — and it finds
+  responses, unlabelled controls, dead ends and lost form data, and it finds
   them the same way every time, which a model cannot promise.
 
 * **Model** (when configured). The same loop, but the next action is chosen by
@@ -161,7 +161,7 @@ def decide_deterministic(observation: dict, state: ExplorerState) -> Decision:
         state.consecutive_backs = 0
         return Decision(
             "goto", url=state.base_url,
-            rationale="left the application — returning to the start",
+            rationale="left the application, returning to the start",
         )
 
     state.visited_routes.add(route)
@@ -227,10 +227,10 @@ def _back_or_restart(state: ExplorerState, why: str) -> Decision:
         if state.base_url:
             return Decision(
                 "goto", url=state.base_url,
-                rationale=f"{why} — backing out repeatedly got nowhere, restarting from the top",
+                rationale=f"{why}: backing out repeatedly got nowhere, restarting from the top",
             )
-        return Decision("finish", rationale=f"{why} — and nowhere left to go")
-    return Decision("back", rationale=f"{why} — going back")
+        return Decision("finish", rationale=f"{why}, and nowhere left to go")
+    return Decision("back", rationale=f"{why}, going back")
 
 
 async def decide_with_model(
@@ -291,6 +291,11 @@ async def decide_with_model(
         "required": ["action", "index", "value", "rationale", "finding"],
         "additionalProperties": False,
     }
+
+    # Only the CURRENT page state is in the prompt (state last, for a cache-stable
+    # prefix); prior states live as one-line trail entries above (WO#8-A retention).
+    from ...core.metrics import observe_state_tokens
+    observe_state_tokens(observation.get("state_tokens"))
 
     result = await provider.complete(
         [Message(role=Role.USER, content=prompt)],

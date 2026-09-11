@@ -4,22 +4,28 @@ import { Wind } from 'lucide-react';
 /**
  * The GaleQEA wordmark.
  *
- * Flat by rule. No gradient, no glow, no drop shadow — the two brand colours are
+ * Flat by rule. No gradient, no glow, no drop shadow: the two brand colours are
  * laid down as solid fills and nothing else. A neon bloom would also put the
  * mark into direct competition with the status palette, where saturated colour
  * already means something specific (pass, fail, flaky) and must not be spent on
  * decoration.
  *
- * The typographic contrast carries the identity instead: `Gale` italic and
- * lighter, leaning forward; `QEA` upright and heavy, planted. Motion against
- * rigour, which is the product in two words.
+ * The typographic contrast carries the identity instead: `gale` and `a` italic
+ * and lighter, leaning forward; `QE` upright, heavy and gold, planted in the
+ * middle. The mark spells the exact package name `galeqea`, but the caps make
+ * **QE** (Quality Engineering) read clearly inside it. Motion against rigour,
+ * which is the product in two letters.
+ *
+ * `QE`'s gold is theme-aware, same fix as the `pass` status colour: the pure
+ * `#FFD60A` only holds contrast on the navy icon box and dark surfaces, so on
+ * a white/light ground it uses the deepened `--color-pass` gold instead of
+ * washing out.
  */
 
-/** Brand accent — a flat, modern blue, cohesive with the app's UI accent. */
-/** Brand accent — a warm, flat, professional orange against the navy ground. */
-/** Brand accent — a warm, flat golden yellow against the navy ground. */
+/** Brand accent, the icon's gold: always on the navy box, never bare on a page
+ * background, so it stays the pure, vivid value in both themes. */
 export const GALE_ACCENT = '#FFD60A';
-/** Deep navy — the geometric ground the mark sits on. */
+/** Deep navy: the geometric ground the mark sits on. */
 export const GALE_NAVY = '#0A192F';
 
 export type LogoSize = 'sm' | 'md' | 'lg';
@@ -47,7 +53,7 @@ export function GaleQEALogo({
       // One accessible name for the whole lockup. Without this a screen reader
       // announces "Gale" and "QEA" as two unrelated fragments.
       role="img"
-      aria-label="GaleQEA"
+      aria-label="Gale QE Agent"
     >
       <span
         aria-hidden="true"
@@ -60,14 +66,17 @@ export function GaleQEALogo({
       </span>
 
       {showText && (
-        <span aria-hidden="true" className={clsx('font-sans leading-none', scale.text)}>
+        <span aria-hidden="true" className={clsx('font-sans lowercase leading-none', scale.text)}>
+          {/* No letter-space between the parts: they read as one word `galeqea`,
+              with the caps + weight + colour change on QE doing the separating. */}
           <span className="font-semibold italic tracking-tight text-[#0A192F] dark:text-white">
-            Gale
+            gale
           </span>
-          {/* No letter-space between the two halves: they read as one word, with
-              the weight and slant change doing the separating. */}
-          <span className="font-extrabold not-italic tracking-tight text-[#FFD60A]">
-            QEA
+          <span className="font-extrabold not-italic uppercase tracking-tight text-pass">
+            QE
+          </span>
+          <span className="font-semibold italic tracking-tight text-[#0A192F] dark:text-white">
+            a
           </span>
         </span>
       )}

@@ -7,7 +7,7 @@ what that means for the export.
 
 ## The shape that travels
 
-Every one of these tools is an implementation of the same structure — the one
+Every one of these tools is an implementation of the same structure, the one
 IEEE 829 defines and ISTQB adopted as its reference. GaleQEA stores that shape
 natively, so exporting is a translation rather than a reconstruction:
 
@@ -15,7 +15,7 @@ natively, so exporting is a translation rather than a reconstruction:
 |---|---|
 | `id` | stable identifier for tracking |
 | `title` | what is being validated |
-| `objective` | why the test exists — the rationale a reviewer approved |
+| `objective` | why the test exists: the rationale a reviewer approved |
 | `preconditions` | state that must exist before execution |
 | `steps` | ordered `(action, data, expected result)` triples |
 | `priority` | relative importance |
@@ -30,7 +30,7 @@ than a judgement made while looking at the output.
 
 ## Supported targets
 
-### Xray Cloud — implemented
+### Xray Cloud: implemented
 
 A test is a **Jira issue** of type Test. That is Xray's defining choice: tests
 live in Jira's permission model, workflow and JQL, which is exactly what
@@ -43,28 +43,28 @@ Jira-native teams want and exactly what makes bulk test management awkward.
 - **Create:** GraphQL `POST /api/v2/graphql`, `createTest` mutation, with native
   `steps { action data result }`.
 - **Gotcha:** GraphQL answers `200 OK` with an `errors` array. Treating that as
-  success is how an integration "successfully" pushes nothing — GaleQEA checks
+  success is how an integration "successfully" pushes nothing. GaleQEA checks
   the array explicitly.
 - **Results:** already supported separately via `POST /api/v2/import/execution`.
 
-### Zephyr Scale — implemented
+### Zephyr Scale: implemented
 
-A test is **not** a Jira issue. Zephyr keeps its own object model — folders,
-cycles, plans, parameters — and links to Jira. Better dedicated test-management
+A test is **not** a Jira issue. Zephyr keeps its own object model (folders,
+cycles, plans, parameters) and links to Jira. Better dedicated test-management
 UX, weaker Jira-native integration. The opposite trade-off from Xray.
 
 - **Auth:** Bearer API token.
 - **Create:** `POST /v2/testcases`, then `POST /v2/testcases/{key}/teststeps`.
-  Steps are a **second call** — the case endpoint does not accept them.
+  Steps are a **second call**; the case endpoint does not accept them.
 
-### Azure DevOps Test Plans — implemented
+### Azure DevOps Test Plans: implemented
 
 A test is a **work item** of type `Test Case`, so it inherits area paths,
 iterations, boards and queries.
 
 - **Auth:** PAT, basic auth with an empty username.
 - **Create:** `POST /_apis/wit/workitems/$Test%20Case?api-version=7.1` with a
-  JSON **patch** document — `Content-Type: application/json-patch+json`, not
+  JSON **patch** document: `Content-Type: application/json-patch+json`, not
   `application/json`.
 - **Steps** live in `Microsoft.VSTS.TCM.Steps` as a custom XML blob:
 
@@ -81,12 +81,12 @@ iterations, boards and queries.
   Three rules that bite: every `<step>` needs **exactly two**
   `parameterizedString` children even when there is no expected result;
   `ValidateStep` has an expected result and `ActionStep` does not; and the body
-  is escaped **twice** — once as HTML, once as XML — so an unescaped ampersand
+  is escaped **twice** (once as HTML, once as XML), so an unescaped ampersand
   fails validation outright rather than degrading.
 
-### TestRail — implemented
+### TestRail: implemented
 
-Standalone rather than Jira-resident, and licensed per TestRail user — which
+Standalone rather than Jira-resident, and licensed per TestRail user, which
 matters when manual testers or contractors do not otherwise need Jira seats.
 
 - **Auth:** basic auth with an API key.
@@ -102,7 +102,7 @@ matters when manual testers or contractors do not otherwise need Jira seats.
 | Tool | Position | Why not yet |
 |---|---|---|
 | **Tricentis qTest** | Enterprise ALM, strong at scale | REST API is capable; no current demand and it needs a licensed instance to verify against |
-| **Qase** | Cleanest standalone UX | Straightforward REST API — the cheapest of these to add next |
+| **Qase** | Cleanest standalone UX | Straightforward REST API, the cheapest of these to add next |
 | **PractiTest** | Full ALM breadth | Broad surface; a partial integration would be worse than none |
 | **Jira alone (no test add-on)** | Very common in practice | GaleQEA already files Jira *issues*; a test case as a plain issue loses the step structure, so it is offered as a defect path rather than a test-management one |
 
@@ -114,7 +114,7 @@ map `PortableTestCase` onto the target's shape and register it in `TARGETS`.
 ## How pushing behaves
 
 Every export **leaves the building**, so every export is behind the approval
-gate — including one an agent requests over MCP. Calling `push_test_cases`
+gate, including one an agent requests over MCP. Calling `push_test_cases`
 returns an approval id, not a result:
 
 ```json
@@ -127,21 +127,42 @@ suggestion into something that looks agreed.
 
 ---
 
+## The tester loop: file, import, publish, notify
+
+Beyond pushing whole suites, GaleQEA closes the day-to-day loop with the tools a
+tester already lives in. Every outward write is behind the approval gate, and
+credentials are sealed in the vault.
+
+| Flow | What it does | Reach it |
+|---|---|---|
+| **Defects from failures** | One sentence or one click files a tracked issue from a red test: Jira Cloud (ADF body, reproduction from the steps, environment/build/browser, evidence attached), or a GitHub/GitLab issue. Idempotent by failure fingerprint: a recurrence comments on the existing issue and bumps its count instead of opening a duplicate. | `file_defect` · `POST /results/{id}/defect` · `galeqea defect file` · "file a bug for run #N &lt;KEY&gt;" |
+| **Jira → tests** | Import stories from a sprint / fixVersion / JQL as requirements (source-anchored, idempotent; a changed description marks the linked tests stale), generate tests through the review board, then write coverage back to the story. | `import_jira_stories` · `POST …/integrations/jira/import` · `galeqea jira import` · "import stories from open sprint" |
+| **Results → Xray / Zephyr / TestRail** | One gated `results.push`, idempotent per run+target (`run_exports`): Xray by key or a stable `definition`, Zephyr by the `PROJ-T` key, TestRail by a case-id tag. | `push_results` · `POST /runs/{id}/push` · `galeqea results push` · "push run #42 to xray plan APP-10" |
+| **Release report → Confluence** | Publish a release report as a Confluence page (tables + Go/No-Go status macros, labelled `test-report`), updated in place on re-publish. | `publish_release_report` · `POST /milestones/{id}/publish` · `galeqea release publish` · "publish release report 1.4 to confluence space QA" |
+| **Notifications** | Slack Incoming Webhook or Teams connector posts on finished/failed runs, proposed heals, queued approvals, sign-offs and finished cycles, with a "failures only" toggle. | Settings → Integrations · "connect slack" · "notify slack on failures" |
+
+Connect any of these in **Settings → Integrations** (the token is typed into a
+password field and sealed in the vault, never returned by the API), or in chat
+with a secure connect form. See [PARITY.md](PARITY.md) for the full
+chat/HTTP/MCP/CLI matrix.
+
+---
+
 ## Getting requirements in
 
 | Format | Support |
 |---|---|
-| `.xlsx` / `.xlsm` | **Structured** — the table is read as a table: header row detected past any title block, columns mapped by meaning (ID, Requirement, Acceptance Criteria, Priority, Module, Type), one requirement per row |
+| `.xlsx` / `.xlsm` | **Structured**: the table is read as a table: header row detected past any title block, columns mapped by meaning (ID, Requirement, Acceptance Criteria, Priority, Module, Type), one requirement per row |
 | `.docx` | Headings, paragraphs and tables |
 | `.pdf` | Text layer; a scanned PDF is reported as needing OCR rather than ingested empty |
 | `.md` / `.txt` | Headings, bullets and numbered lists |
-| `.xls` (legacy) | Refused with an instruction to re-save as `.xlsx` — no data is lost in that conversion |
+| `.xls` (legacy) | Refused with an instruction to re-save as `.xlsx`; no data is lost in that conversion |
 
 A spreadsheet's own **Priority column outranks inferred risk**: it is a human
 judgement, and guessing over it would be presumptuous.
 
 **Every requirement gets at least one test.** That is verified after generation,
-not assumed — three separate steps can otherwise drop a requirement's last
+not assumed, because three separate steps can otherwise drop a requirement's last
 proposal (similarity de-duplication, model enrichment replacing the baseline,
 and suppression against tests that already exist). Anything missing is
 backfilled and named in the report.

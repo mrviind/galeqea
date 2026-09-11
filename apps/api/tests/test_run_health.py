@@ -1,4 +1,4 @@
-"""check_run_health — flaky-aware advice before a (re-)run."""
+"""check_run_health: flaky-aware advice before a (re-)run."""
 
 from __future__ import annotations
 
@@ -73,11 +73,12 @@ def test_flaky_tests_are_ranked_worst_first(db, project):
 
 def test_quarantined_tests_never_reach_the_selection():
     """select_tests excludes quarantined tests by default, so run_tests never runs
-    them — and check_run_health mirrors run_tests exactly. The health check
+    them, and check_run_health mirrors run_tests exactly. The health check
     therefore reports the set that would actually run, quarantined already gone.
     This is verified against the resolver so the mirror cannot silently drift."""
-    from galeqea.engine.plan import select_tests
     import inspect
+
+    from galeqea.engine.plan import select_tests
     src = inspect.getsource(select_tests)
     assert "exclude_quarantined" in src and "quarantined" in src, (
         "select_tests must still filter quarantined; check_run_health relies on it"
@@ -92,7 +93,7 @@ def test_an_empty_selection_is_handled(db, project):
 
 
 def test_a_test_with_no_history_is_not_called_flaky(db, project):
-    """No run history means no evidence of flakiness — not a low score to trust."""
+    """No run history means no evidence of flakiness, not a low score to trust."""
     tag = "nohist-" + uuid.uuid4().hex[:8]
     tc = TestCase(project_id=project.id, key=f"NH-{tag}", title="new",
                   status=TestStatus.APPROVED, tags=[tag], category="automated")

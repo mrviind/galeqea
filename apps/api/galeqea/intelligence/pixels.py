@@ -3,14 +3,14 @@
 Two decisions define this module, and both exist to stop it crying wolf:
 
 **Tolerance.** An exact per-pixel compare flags font hinting, sub-pixel
-anti-aliasing and a one-unit shift in a gradient — noise that differs between
+anti-aliasing and a one-unit shift in a gradient, all noise that differs between
 two runs on the same machine. A channel must differ by more than
 ``CHANNEL_TOLERANCE`` before the pixel counts as changed at all.
 
 **Regions, not confetti.** A list of 40,000 changed pixels tells a reviewer
 nothing. The image is divided into a coarse grid; a cell counts as changed only
 when enough of it changed, and adjacent changed cells are merged into boxes. The
-output is "three regions changed, the largest is the header" — something a
+output is "three regions changed, the largest is the header", something a
 person can actually act on.
 """
 

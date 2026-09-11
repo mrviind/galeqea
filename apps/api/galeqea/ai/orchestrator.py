@@ -157,7 +157,7 @@ NEXT_STEPS = {
 }
 
 
-#: Tools worth suggesting again even after they have run — a run or a diagnosis
+#: Tools worth suggesting again even after they have run. A run or a diagnosis
 #: is naturally repeatable. Everything else is a one-time step in the pipeline,
 #: so re-suggesting it after it is done is noise ("generate a script" when a
 #: script already exists).
@@ -188,11 +188,11 @@ def suggest_next(steps: list[dict], session_tools: frozenset[str] = frozenset(),
 
     Two things make this conversation-aware:
 
-    * **The last productive tool this turn drives the base suggestions** — that is
+    * **The last productive tool this turn drives the base suggestions**: that is
       where the user's attention is.
     * **`session_tools`** is every tool that has already run in this conversation.
-      A chip whose target has already been done — and is not inherently
-      repeatable — is dropped, so the agent does not keep offering "generate a
+      A chip whose target has already been done (and is not inherently
+      repeatable) is dropped, so the agent does not keep offering "generate a
       script" after a script exists. What is left is the genuine next move.
     """
     for step in reversed(steps or []):
@@ -255,7 +255,9 @@ class Orchestrator:
         user: User,
         text: str,
         attachments: list[dict] | None = None,
+        page: str | None = None,
     ) -> ChatReply:
+        self._page = page
         project_id = session.project_id
         ctx = ToolContext(
             db=self.db,
@@ -281,19 +283,25 @@ class Orchestrator:
             })
 
         # If the chat asked the user for one input (e.g. a URL), their next
-        # message is the answer to that question — handled before anything else.
+        # message is the answer to that question, handled before anything else.
         resumed = await self._resume_prompt(session, text, ctx, warnings)
         if resumed is not None:
             return resumed
 
+        # A proposed website test plan is waiting for approval, so this message is
+        # the answer to it (approve / cancel / revise).
+        resumed_plan = await self._resume_website_plan(session, text, ctx, warnings)
+        if resumed_plan is not None:
+            return resumed_plan
+
         # A pending plan takes precedence over the router: while the agent is
         # waiting on the user to confirm a plan, their next message is an answer
-        # to it — proceed, stop, or a revision — not a fresh command.
+        # to it (proceed, stop, or a revision), not a fresh command.
         plan = pending_plan(session)
         gate = classify_reply(text, plan is not None)
         if gate == "stop":
             clear_plan(session)
-            return ChatReply(text="Cancelled — the plan will not run.", path="computed",
+            return ChatReply(text="Cancelled. The plan will not run.", path="computed",
                              warnings=warnings)
         if gate == "proceed":
             return await self._execute_pending_plan(session, plan, ctx, warnings)
@@ -305,6 +313,89 @@ class Orchestrator:
         # The first-run on-ramp: a URL in the message (or an explicit "test my
         # site") means the user wants to point GaleQEA at something and test it
         # right now. This works with no model, so a fresh user is never stuck.
+        # Release-management verbs (create release, exit criteria, environment, plan,
+        # start cycle, readiness, sign off, report) are deterministic, no model. Matched
+        # BEFORE the URL on-ramp so "add environment staging http://…" creates an
+        # environment rather than being read as a "test this URL" request.
+        from .. import models
+        from ..services import release_chat
+
+        project = self.db.get(models.Project, project_id)
+        if project is not None:
+            handled = release_chat.try_handle(self.db, project, text, user)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="release",
+                                 warnings=warnings)
+
+            # "file a bug for <failure>" → a gated defect approval (deterministic).
+            from ..services import defect_chat
+            handled = defect_chat.try_handle(self.db, project, text, user)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="defect",
+                                 warnings=warnings)
+
+            # Jira daily loop: connect / import stories / check stale / write back.
+            from ..services import jira_chat
+            handled = jira_chat.try_handle(self.db, project, text, user)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="jira",
+                                 warnings=warnings)
+
+            # "push run #N to xray/zephyr/testrail" → a gated results push.
+            from ..services import results_chat
+            handled = results_chat.try_handle(self.db, project, text, user)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="results",
+                                 warnings=warnings)
+
+            # "connect slack" / "notify slack on failures" → notification targets.
+            from ..services import notify_chat
+            handled = notify_chat.try_handle(self.db, project, text, user)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="notify",
+                                 warnings=warnings)
+
+            # Tester-authored exploratory sessions: start / note:/bug: / end.
+            from ..services import manual_session_chat
+            handled = manual_session_chat.try_handle(self.db, project, text, user)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="sbtm",
+                                 warnings=warnings)
+
+            # "use <model> for locating" → per-role model routing; "cap locating at
+            # N tokens" → a per-role per-call ceiling that stops-and-asks.
+            from ..services import model_chat
+            handled = model_chat.try_handle(self.db, project, text, user)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="model",
+                                 warnings=warnings)
+
+            # "generate tests from <doc>", "what's ambiguous in <doc>?", "export tests
+            # for REQ-014 as testrail csv", "show traceability", "archive/dedupe
+            # requirement docs" (WO#9-C).
+            from ..services import requirements_chat
+            handled = await requirements_chat.try_handle(self.db, project, text, user)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="requirements",
+                                 warnings=warnings)
+
+            # Page-aware Q&A: answer questions about whatever page is open, from the
+            # database, with no model required (owner directive: chat is context-aware).
+            from ..services import page_chat
+            handled = page_chat.try_handle(self.db, project, text, user, page)
+            if handled is not None:
+                reply_text, blocks = handled
+                return ChatReply(text=reply_text, blocks=blocks, path="page",
+                                 warnings=warnings)
+
         onramp = await self._detect_onramp(session, text, ctx, warnings)
         if onramp is not None:
             return onramp
@@ -312,6 +403,16 @@ class Orchestrator:
         await self._status(session, project_id, "Understanding the request")
 
         last_run = self._last_run(project_id)
+
+        # Deterministic report/planning commands, no model: "coverage report as
+        # markdown", "export last run as junit", "copy the run report for AI",
+        # "plan coverage", "status brief", "quality retro last 30 days".
+        command = await self._detect_chat_command(session, text, ctx, last_run)
+        if command is not None:
+            command.warnings = warnings
+            command.path = "computed"
+            return command
+
         routed = route(text, last_run_id=last_run.id if last_run else None)
 
         # --- path 1: confident deterministic dispatch --------------------- #
@@ -334,13 +435,13 @@ class Orchestrator:
         if not settings.ai_enabled:
             return ChatReply(
                 text=(
-                    "I couldn't match that to an action I can take without a model, and "
-                    "GaleQEA is currently in No-AI mode.\n\n"
-                    "Things I can still do right now: run tests (\"run the smoke tests on "
+                    "That one needs a model to reason about, and none is connected yet.\n\n"
+                    "Without one I can still run built tests (\"run the smoke tests on "
                     "staging\"), re-run failures, schedule runs, list tests, show coverage "
-                    "gaps, score flaky tests, and explain a failure from its evidence.\n\n"
-                    "To enable open-ended requests, configure a model in Settings → Model — "
-                    "including a fully offline local one."
+                    "gaps, score flaky tests, and explain a failure from its evidence, all "
+                    "for free.\n\n"
+                    "To let me explore, plan, generate and reason, connect a model in "
+                    "Settings → Model (any provider, or a fully offline local one)."
                 ),
                 blocks=[{"type": "mode_notice", "mode": "no_ai",
                          "capabilities": _NO_AI_CAPABILITIES}],
@@ -388,8 +489,8 @@ class Orchestrator:
         """Run a plan the user just confirmed.
 
         The stored plan runs, not a re-planned one, so "yes" means exactly what
-        was shown. Every write step still meets the approval gate as it runs —
-        confirming the plan is consent to attempt it, never a bypass of review.
+        was shown. Every write step still meets the approval gate as it runs.
+        Confirming the plan is consent to attempt it, never a bypass of review.
         """
         project_id = session.project_id
         clear_plan(session)  # a plan is confirmed once; it does not linger
@@ -435,7 +536,7 @@ class Orchestrator:
         if is_cancel(text):
             clear_prompt(session)
             return ChatReply(
-                text="No problem — paste a URL whenever you'd like to test a site.",
+                text="No problem. Paste a URL whenever you'd like to test a site.",
                 path="onramp", warnings=warnings,
             )
         url = find_url(text)
@@ -443,7 +544,7 @@ class Orchestrator:
             # Keep the slot open and ask again rather than losing their place.
             return ChatReply(
                 text=("That doesn't look like a web address. Paste the full URL, "
-                      "e.g. https://example.com — or say 'cancel'."),
+                      "e.g. https://example.com, or say 'cancel'."),
                 path="onramp", warnings=warnings,
             )
         clear_prompt(session)
@@ -459,7 +560,7 @@ class Orchestrator:
         if WANTS_TO_TEST.search(text):
             set_prompt(session, slot="smoke_url", question="Which URL should I test?")
             return ChatReply(
-                text=("Sure — which URL should I test? Paste the full address, "
+                text=("Sure, which URL should I test? Paste the full address, "
                       "e.g. https://example.com. I'll open it in a real browser and "
                       "check it loads cleanly."),
                 path="onramp", warnings=warnings,
@@ -467,39 +568,902 @@ class Orchestrator:
         return None
 
     async def _run_onramp(self, session, url, ctx, warnings) -> ChatReply:
-        """Point the project at ``url`` and run the built-in smoke check inline."""
-        from ..services.onramp import normalize_url, run_smoke
+        """Explore the URL, propose a test plan, and wait for approval in the chat.
 
-        await self._status(session, session.project_id, f"Testing {normalize_url(url)}")
-        result = await run_smoke(
-            self.db, project_id=session.project_id, url=url, triggered_by=ctx.actor_id,
+        The plan itself never runs here. The human approves it first (the same gate
+        every write goes through). Crawl is deterministic; a configured model sharpens
+        the plan (hybrid).
+        """
+        from ..services import website_test as wt
+        from ..services.onramp import normalize_url
+
+        target = normalize_url(url)
+        await self._status(session, session.project_id, f"Exploring {target}")
+        # Browser-driven discovery shells out to the runner (seconds); keep it off
+        # the event loop so the SSE stream and other requests stay responsive.
+        import asyncio
+        discovery = await asyncio.to_thread(wt.discover_pages, url)
+        if not discovery.get("ok"):
+            return ChatReply(
+                text=f"I couldn't reach {target}: {discovery.get('error', 'no response')}. "
+                     "Check the address and try again.",
+                path="onramp", warnings=warnings,
+            )
+        plan = wt.build_plan(discovery)
+        plan = await wt.enrich_plan_with_model(plan, self.provider)  # hybrid: model if present
+
+        # Track the Golden Path journey for this target. The rail resumes on reload
+        # and gives "continue"/"what's next" a referent. The plan is held on the
+        # journey and only becomes the *pending* (approvable) plan once the plan card
+        # is actually shown, so "continue" at Guardrails advances rather than runs.
+        from ..models import JourneyStage
+        from ..services import journeys
+        journey = journeys.start(self.db, session.project_id, plan["target"], created_by=ctx.actor_id)
+        first_time = not (journey.completed or [])  # never been stopped at guardrails yet
+
+        # First encounter with a target is a real stop: an auth wall becomes an
+        # Access card; otherwise the Guardrails card (what we will and won't do)
+        # gets one explicit acknowledgement, remembered per target thereafter.
+        auth_gated = (discovery.get("skipped", {}) or {}).get("auth", 0)
+        if first_time and auth_gated:
+            journeys.advance(self.db, journey, JourneyStage.ACCESS,
+                             ran=False, discovery=discovery, plan=plan, plan_version=1)
+            return self._access_reply(journey, discovery, warnings)
+        if first_time:
+            journeys.set_guardrails(self.db, journey,
+                                    **journeys.default_guardrails(plan["target"], journey.environment))
+            journeys.advance(self.db, journey, JourneyStage.GUARDRAILS,
+                             discovery=discovery, plan=plan, plan_version=1)
+            return self._guardrails_reply(journey, discovery, warnings)
+
+        wt.stash_plan(session, plan)  # returning target: plan is approvable now
+        journeys.advance(self.db, journey, JourneyStage.PLAN,
+                         discovery=discovery, plan=plan, plan_version=1)
+        return self._website_plan_reply(plan, journey, warnings)
+
+    def _website_plan_reply(self, plan, journey, warnings) -> ChatReply:
+        from ..services import journeys
+        from ..services import test_plan as tp
+
+        # The typed plan (every test type as a reviewable row) is derived from the
+        # discovery and stored on the journey so toggles version it.
+        stored = (journey.plan or {}).get("typed")
+        typed = stored or tp.build_typed_plan(journey.discovery or {},
+                                              version=journey.plan_version or 1)
+        merged = {**(journey.plan or {}), "typed": typed}
+        journeys.advance(self.db, journey, journey.stage, ran=False,
+                         plan=merged, plan_version=typed["version"])
+
+        # File the plan as a first-class approval request (idempotent), so the plan
+        # a person approves is an audited gate reachable from HTTP/CLI/MCP too, not
+        # only this chat reply.
+        from .. import models
+        from ..services import plan_approval
+        project = self.db.get(models.Project, journey.project_id)
+        plan_approval.request_plan_approval(self.db, project, journey)
+
+        t = typed["totals"]
+        n = plan["test_count"]
+        return ChatReply(
+            text=(f"Test plan v{typed['version']} for {plan['target']}: "
+                  f"{t['types_enabled']} test type(s), {t['test_count']} test(s), "
+                  f"~{t['est_minutes']} min, ~{t['est_build_tokens']:,} build tokens "
+                  "(re-runs cost 0). Approve to run, toggle a type, or say what to change."),
+            blocks=[{
+                "type": "website_plan",
+                "target": plan["target"],
+                "pages": plan["pages"],
+                "functional": plan["functional"],
+                "non_functional": plan["non_functional"],
+                "test_count": n,
+                "discovered": (journey.discovery or {}).get("discovered", n),
+                "enriched": plan.get("enriched", False),
+                "notes": plan.get("notes", []),
+                "auth_gated": (journey.discovery or {}).get("skipped", {}).get("auth", 0),
+                "test_types": typed["types"],
+                "totals": t,
+                "plan_version": typed["version"],
+            }],
+            path="onramp", warnings=warnings,
+            suggestions=[
+                {"label": "Approve & run", "text": "approve"},
+                {"label": "Test all pages", "text": "test all pages"},
+            ],
         )
-        text = result.get("summary") or "Done."
-        # Suggestions are objects {label, text} — the shape the composer renders
-        # (a plain string leaves the chip with no label, just an arrow).
-        suggestions: list[dict] = []
-        if result.get("ok"):
-            text += ("\n\nThat's your first run — the target is set, so you can just say "
-                     "\"run smoke\" again anytime. Want me to record a click-through and "
-                     "turn it into a saved test?")
-            suggestions = [
-                {"label": "Run smoke again", "text": "run smoke"},
-                {"label": "Record a test", "text": "How do I record a test?"},
-                {"label": "What's not tested?", "text": "what's not tested?"},
-            ]
-        elif result.get("timed_out"):
-            text = (f"I started testing {result.get('target')} (run #{result.get('run_number')}), "
-                    "but it's taking a while — watch the run for the result.")
+
+    def _guardrails_reply(self, journey, discovery, warnings) -> ChatReply:
+        from ..services import journeys
+        g = journey.guardrails or {}
+        return ChatReply(
+            text=(f"Before I test {journey.target}, here are the guardrails I'll work under "
+                  f"({g.get('reason', '')}). Say 'continue' to accept, or adjust them."),
+            blocks=[{"type": "guardrails_card", "target": journey.target,
+                     "environment": journey.environment, "guardrails": g,
+                     **journeys.describe(journey)}],
+            path="onramp", warnings=warnings,
+            suggestions=[
+                {"label": "Continue", "text": "continue"},
+                {"label": "Allow writes" if g.get("read_only") else "Make read-only",
+                 "text": "allow writes" if g.get("read_only") else "make it read-only"},
+            ],
+        )
+
+    def _access_reply(self, journey, discovery, warnings) -> ChatReply:
+        from ..services import access, journeys
+        auth = (discovery.get("skipped", {}) or {}).get("auth", 0)
+        gated = [f["url"] for f in (discovery.get("findings") or []) if f.get("kind") == "auth_gated"][:5]
+        kinds = access.detected_kinds(journey)
+        kind_note = (f" It uses {' and '.join(kinds)} auth." if kinds else "")
+        return ChatReply(
+            text=(f"{journey.target} has {auth} page(s) behind a login.{kind_note} "
+                  "I can log in for you, use test credentials, or skip the gated pages."),
+            blocks=[{"type": "access_card", "target": journey.target, "auth_count": auth,
+                     "gated": gated, "auth_kinds": kinds, **journeys.describe(journey)}],
+            path="onramp", warnings=warnings,
+            suggestions=[
+                {"label": "Log in for me", "text": "log in for me"},
+                {"label": "Add test credentials", "text": "add test credentials"},
+                {"label": "Skip gated pages", "text": "skip gated pages"},
+            ],
+        )
+
+    async def _resume_website_plan(self, session, text, ctx, warnings) -> ChatReply | None:
+        """A proposed website plan is pending: this message approves, cancels, or revises it."""
+        from ..services import website_test as wt
+
+        plan = wt.pending_plan(session)
+        if not plan:
+            return None
+        gate = classify_reply(text, True)
+        if gate == "stop":
+            wt.clear_plan(session)
+            return ChatReply(text="Cancelled. Nothing was run.", path="onramp", warnings=warnings)
+        if gate == "amend":
+            # Not a yes/no, so drop the plan and handle the message fresh.
+            wt.clear_plan(session)
+            return None
+        # proceed: approve the plan through the ONE gate (the same decide service
+        # HTTP/CLI/MCP use: one audited human decision, SelfApprovalError for agents),
+        # then run the tests that approval built.
+        wt.clear_plan(session)
+        from ..core import approvals
+        from ..models import User
+        from ..services import journeys, plan_approval
+
+        journey = journeys.for_target(self.db, session.project_id, plan["target"])
+        req = plan_approval.pending_for_journey(self.db, journey) if journey else None
+        decider = self.db.get(User, ctx.actor_id) if ctx.actor_id else None
+        built_keys: list[str] = []
+        if req is not None and decider is not None and not decider.is_machine:
+            try:
+                outcome = approvals.approve(self.db, req.id, decider)
+                built_keys = (outcome.result or {}).get("keys", [])
+            except approvals.SelfApprovalError:
+                pass  # a machine can't approve; fall back to the direct website run
+
+        await self._status(session, session.project_id, f"Testing {plan['target']}")
+        if built_keys:
+            result = await wt.run_approved_keys(
+                self.db, project_id=session.project_id, keys=built_keys,
+                target=plan["target"], triggered_by=ctx.actor_id,
+            )
+        else:
+            result = await wt.run_website_test(
+                self.db, project_id=session.project_id, plan=plan, triggered_by=ctx.actor_id,
+            )
+        text_out = result.get("summary") or "Done."
+        if result.get("timed_out"):
+            text_out = (f"Testing {plan['target']} is still running (run "
+                        f"#{result.get('run_number')}). Watch it in the run view.")
+        # Advance the journey to the report stage, recording the run it produced.
+        from ..models import JourneyStage
+        from ..services import journeys
+        journey = journeys.for_target(self.db, session.project_id, plan["target"])
+        if journey is not None:
+            journeys.advance(self.db, journey, JourneyStage.REPORT, run_id=result.get("run_id"))
         blocks = [{
-            "type": "smoke_result",
+            "type": "website_result",
             **{k: result.get(k) for k in (
-                "ok", "status", "target",
-                "console_errors", "network_failures", "run_id", "run_number")},
+                "ok", "status", "target", "passed", "failed", "pages",
+                "run_id", "run_number")},
         }]
         return ChatReply(
-            text=text, blocks=blocks, path="onramp",
-            warnings=warnings, suggestions=suggestions,
+            text=text_out, blocks=blocks, path="onramp", warnings=warnings,
+            suggestions=[
+                {"label": "Open the report", "text": "show the run report"},
+                {"label": "Keep it green", "text": "keep it green"},
+            ],
         )
+
+    # ------------------------------------------------------------------ #
+    async def _detect_chat_command(self, session, text, ctx, last_run) -> ChatReply | None:
+        """Deterministic chat parity for the report and planning surfaces: a plain
+        request like "coverage report as markdown" or "plan coverage" is answered
+        directly from data (no model) and reports come back as cards carrying the
+        same export actions the UI offers."""
+        import re
+
+        t = (text or "").lower()
+        pid = session.project_id
+
+        # --- Golden Path navigation ------------------------------------- #
+        nav = re.search(r"\bwhat'?s next\b|\bnext step\b|\bwhere (are|was) we\b|\bresume\b|"
+                        r"\bcontinue\b|\blooks good\b|\bproceed\b|\baccept\b|\bskip gated\b|"
+                        r"\blog ?in\b|\badd (test )?credentials\b|\bforget (the )?(test )?credentials\b|"
+                        r"\ballow writes\b|\bmake it read.?only\b|\bdata policy\b|\btest all pages\b|"
+                        r"\bsave (the )?plan as tests\b|\bbuild the tests\b|\bbuild it\b|"
+                        r"\bsmoke\b|\bapprove\b|\brun (it|all|everything|the (full )?suite|the tests)\b|"
+                        r"\btriage\b|\b(rerun|quarantine|heal|mark expected|file (a )?bug)\b|"
+                        r"\breadiness\b|\bgo.?no.?go\b|\bready to (ship|release)\b|\bsign.?off\b|"
+                        r"\bpoke\b|\bexplore .{0,40}\b(as|for)\b|\bmake (this|it|a) (a )?test\b|"
+                        r"\bkeep it green\b|\bkeep.green\b|\badd to ci\b|\bgithub action\b|\bschedule\b|"
+                        r"\bshare( the| this)? report\b|\bshare it\b|\bpublish( the)? report\b|"
+                        r"\b(enable|disable|turn on|turn off|add|drop|remove) \w", t)
+        if nav:
+            from ..services import journeys
+            j = journeys.active_journey(self.db, pid)
+            if j is not None:
+                # handle() sets the reply's warnings; an empty list here is fine.
+                reply = await self._journey_nav(j, t, session, ctx, [])
+                if reply is not None:
+                    return reply
+
+        # --- planning tools (already deterministic) --------------------- #
+        if re.search(r"\bplan coverage\b|\bcoverage plan\b|\bwhat (should i|to) (test|cover) next\b", t):
+            return await self._planning_reply("plan_coverage", {}, ctx)
+        if re.search(r"\bstatus brief\b|\bstand ?up\b|\bwhere (do|does) (we|things|testing) stand\b", t):
+            return await self._planning_reply("test_status_brief", {}, ctx)
+        if re.search(r"\bquality retro\w*\b|\bretrospective\b", t):
+            days = re.search(r"last (\d+) days?", t)
+            return await self._planning_reply(
+                "quality_retrospective", {"days": int(days.group(1))} if days else {}, ctx)
+
+        # --- report / export commands → a report card ------------------- #
+        if not re.search(r"\breport\b|\bexport\b|\bcopy\b.{0,20}\bfor ai\b", t):
+            return None
+        if re.search(r"\bcoverage\b", t):
+            rtype, base, ui = "coverage", f"/api/projects/{pid}/coverage", "/intelligence"
+        elif re.search(r"\btraceability\b", t):
+            rtype, base, ui = "traceability", f"/api/projects/{pid}/traceability", "/intelligence"
+        elif re.search(r"\bflak", t):
+            rtype, base, ui = "flaky", f"/api/projects/{pid}/flaky", "/intelligence"
+        elif last_run is not None:
+            rtype = "run"
+            base, ui = f"/api/projects/{pid}/runs/{last_run.id}", f"/runs/{last_run.id}"
+        else:
+            return None
+
+        summary, title = self._report_summary(rtype, last_run)
+        formats = "JSON, Markdown or JUnit" if rtype == "run" else "JSON or Markdown"
+        return ChatReply(
+            text=f"Here's the {title.lower()}. Export it as {formats}, or copy it for an AI.",
+            blocks=[{
+                "type": "report_card", "report": rtype, "title": title,
+                "api_base": base, "ui_href": ui, "junit": rtype == "run", "summary": summary,
+            }],
+        )
+
+    async def _planning_reply(self, tool: str, args: dict, ctx) -> ChatReply:
+        result = await registry.invoke(tool, args, ctx)
+        if not result.get("ok", True):
+            return ChatReply(text=f"That didn't work: {result.get('error', 'unknown error')}")
+        ui = result.get("_ui") or {}
+        blocks = []
+        if ui.get("markdown"):
+            blocks.append({"type": "doc", "title": ui.get("title") or tool, "markdown": ui["markdown"]})
+        return ChatReply(text=result.get("guidance") or ui.get("title") or "Done.", blocks=blocks)
+
+    def _journey_card(self, journey) -> ChatReply:
+        from ..services import journeys
+
+        info = journeys.describe(journey)
+        nxt = info["next"]
+        return ChatReply(
+            text=f"You're on the **{info['stage']}** stage for {info['target']}. "
+                 f"Next: {nxt['label'].lower()}.".replace("**", ""),
+            blocks=[{"type": "journey_card", **info}],
+            suggestions=[{"label": nxt["label"], "text": nxt["command"]}],
+        )
+
+    async def _journey_nav(self, journey, t, session, ctx, warnings) -> ChatReply | None:
+        """Move an active journey through its stage-specific stops (access,
+        guardrails) or edit its guardrails, all deterministic."""
+        import re
+
+        from ..models import JourneyStage
+        from ..services import journeys
+        from ..services import website_test as wt
+
+        disc = journey.discovery or {}
+
+        # Guardrails edits, available whenever the card is up.
+        if re.search(r"\ballow writes\b", t):
+            journeys.set_guardrails(self.db, journey, read_only=False, reason="writes allowed by you")
+            return self._guardrails_reply(journey, disc, warnings)
+        if re.search(r"\bmake it read.?only\b", t):
+            journeys.set_guardrails(self.db, journey, read_only=True, reason="read-only by you")
+            return self._guardrails_reply(journey, disc, warnings)
+        m = re.search(r"\bdata policy (synthetic|seeded|none)\b", t)
+        if m:
+            journeys.set_guardrails(self.db, journey, data_policy=m.group(1))
+            return self._guardrails_reply(journey, disc, warnings)
+
+        # Forget stored credentials for the target, available at any stage.
+        if re.search(r"\bforget (the )?(test )?credentials\b", t):
+            from ..services import access
+            access.forget(self.db, journey)
+            return ChatReply(text=f"Forgotten. The stored credentials and session for "
+                                  f"{journey.target} are wiped from the vault.",
+                             path="onramp", warnings=warnings)
+
+        # Access stage: pick how to handle the login wall.
+        if journey.stage == JourneyStage.ACCESS:
+            from ..services import access
+            # Credentials were stored (via the secure form) → log in for real and
+            # promote the pages that were behind the wall into the tested set.
+            if access.has_credentials(journey) and re.search(r"\blog ?in\b|\bcontinue\b|\bproceed\b", t):
+                return await self._login_with_credentials(journey, ctx, warnings)
+            if re.search(r"\bskip gated\b|\bcontinue\b|\bproceed\b", t):
+                journeys.set_guardrails(self.db, journey,
+                                        **journeys.default_guardrails(journey.target, journey.environment))
+                journeys.advance(self.db, journey, JourneyStage.GUARDRAILS)
+                return self._guardrails_reply(journey, disc, warnings)
+            if re.search(r"\blog ?in for me\b", t):
+                return await self._login_handoff(journey, ctx, warnings)
+            if re.search(r"\badd (test )?credentials\b", t):
+                return ChatReply(
+                    text="Add credentials in the Access panel. They go straight into the vault, "
+                         "never through the chat. I'll then sign in and test the pages behind the "
+                         "login. Or say 'log in for me' to sign in yourself in a real browser, or "
+                         "'skip gated pages' to proceed without them.",
+                    blocks=[{"type": "access_card", "target": journey.target,
+                             "auth_count": (disc.get("skipped", {}) or {}).get("auth", 0),
+                             "gated": [], "want_credentials": True, **journeys.describe(journey)}],
+                    path="onramp", warnings=warnings,
+                    suggestions=[{"label": "Log in for me", "text": "log in for me"},
+                                 {"label": "Skip gated pages", "text": "skip gated pages"}],
+                )
+
+        # Guardrails accepted → reveal the plan.
+        if journey.stage == JourneyStage.GUARDRAILS and re.search(r"\bcontinue\b|\blooks good\b|\bproceed\b|\baccept\b", t):
+            plan = journey.plan or wt.pending_plan(session)
+            if plan:
+                wt.stash_plan(session, plan)  # make it the pending plan again for "approve"
+                journeys.advance(self.db, journey, JourneyStage.PLAN)
+                return self._website_plan_reply(plan, journey, warnings)
+
+        # Toggle a test type in the plan → a new plan version.
+        toggle = re.search(r"\b(enable|add|turn on|disable|drop|remove|turn off) ([a-z0-9/_ -]+)", t)
+        if toggle and (journey.plan or {}).get("typed"):
+            from ..services import test_plan as tp
+            on = toggle.group(1) in ("enable", "add", "turn on")
+            key = _match_type_key(toggle.group(2), journey.plan["typed"]["types"])
+            if key:
+                new_typed = tp.toggle(journey.plan["typed"], key, on)
+                journey.plan = {**journey.plan, "typed": new_typed}
+                journeys.advance(self.db, journey, journey.stage, ran=False,
+                                 plan=journey.plan, plan_version=new_typed["version"])
+                return self._website_plan_reply(journey.plan, journey, warnings)
+
+        # Build the plan into durable, filed tests with provenance.
+        if re.search(r"\bsave (the )?plan as tests\b|\bbuild the tests\b|\bbuild it\b", t) and (journey.plan or {}).get("typed"):
+            from ..models import JourneyStage, Project
+            from ..services.build import build_tests_from_plan
+            project = self.db.get(Project, journey.project_id)
+            result = build_tests_from_plan(self.db, project, journey)
+            journeys.advance(self.db, journey, JourneyStage.BUILD, test_ids=result["run_keys"])
+            suites = len(result["suites"])
+            return ChatReply(
+                text=(f"Built {result['filed']} test(s) across {suites} suite(s) from the plan for "
+                      f"{journey.target}, one per page / form / endpoint, filed for review with full "
+                      "provenance. Smoke-check them first, or open them in Tests."),
+                blocks=[{"type": "build_result", "target": journey.target,
+                         "filed": result["filed"], "tests": result["tests"],
+                         "suites": result["suites"], "smoke_count": len(result["smoke_keys"]),
+                         **journeys.describe(journey)}],
+                path="onramp", warnings=warnings,
+                suggestions=[
+                    {"label": "Smoke-check first", "text": "smoke it"},
+                    {"label": "Approve & run all", "text": "approve"},
+                    {"label": "What's next", "text": "what's next"},
+                ],
+            )
+
+        # Smoke: a ≤3-min front-door check that reuses the built smoke subset,
+        # gating the full run. Available once tests are built.
+        if re.search(r"\bsmoke\b", t) and (journey.test_ids or journey.stage == JourneyStage.BUILD):
+            return await self._run_smoke(journey, ctx, warnings)
+
+        # Run: approve the built Golden Path suite and run it in full. "approve",
+        # "run it", "run the full suite" mean this; from a later stage it re-runs
+        # (e.g. after adding a credential to cover the auth-gated units).
+        if (journey.stage in (JourneyStage.BUILD, JourneyStage.SMOKE, JourneyStage.RUN,
+                              JourneyStage.TRIAGE, JourneyStage.READINESS, JourneyStage.REPORT)
+                and re.search(r"\bapprove\b|\b(re-?)?run (it|all|everything|the (full )?suite|the tests)\b", t)):
+            return await self._run_golden_path(journey, ctx, warnings)
+
+        # Keep-green: schedule the suite + a CI workflow + webhook routing.
+        if re.search(r"\bkeep it green\b|\bkeep.green\b|\badd to ci\b|\bgithub action\b|\bschedule\b", t):
+            return await self._keep_green(journey, t, ctx, warnings)
+
+        # Exploratory: a guardrail-bounded, timeboxed poke at an area, as a role.
+        if re.search(r"\bpoke\b|\bexplore .{0,40}\b(as|for)\b", t):
+            return await self._explore(journey, t, ctx, warnings)
+        # Promote an exploratory finding into a proposed test.
+        if re.search(r"\bmake (this|it|a) (a )?test\b", t):
+            return await self._make_test(journey, t, ctx, warnings)
+
+        # Share: publish the release report (v2) as shareable artifacts.
+        if re.search(r"\bshare( the| this)? report\b|\bshare it\b|\bpublish( the)? report\b", t):
+            return await self._share(journey, t, ctx, warnings)
+
+        # Readiness: the Go/No-Go gate. "sign off" is refused: a human must own it.
+        if re.search(r"\breadiness\b|\bgo.?no.?go\b|\bready to (ship|release)\b|\bsign.?off\b", t):
+            return await self._readiness(journey, t, ctx, warnings)
+
+        # Triage: group the last run's failures and give each a disposition.
+        if re.search(r"\btriage\b", t):
+            return await self._triage(journey, t, ctx, warnings)
+        # Rerun a slice as a child run → regression delta ("rerun failed", "rerun
+        # the a11y suite", "rerun what touched /checkout"). Checked before the
+        # disposition branch so these don't read as a triage rerun.
+        if re.search(r"\brerun\b", t) and journey.run_id:
+            spec = self._parse_rerun_spec(t)
+            if spec is not None:
+                return await self._rerun(journey, spec, ctx, warnings)
+        # Disposition actions on a triaged failure group.
+        if re.search(r"\b(rerun|quarantine|heal|mark expected|file (a )?bug)\b", t) and journey.run_id:
+            return await self._disposition(journey, t, ctx, warnings)
+
+        # Test the full discovered set, not just the default cap.
+        if re.search(r"\btest all pages\b", t):
+            return await self._expand_plan_to_all(journey, session, warnings)
+
+        # A "what's next" / "where are we" query, or a transition that doesn't
+        # apply at this stage: show the journey card.
+        return self._journey_card(journey)
+
+    async def _expand_plan_to_all(self, journey, session, warnings) -> ChatReply:
+        """Re-discover with a higher cap and re-plan against every page found."""
+        import asyncio
+
+        from ..services import journeys
+        from ..services import website_test as wt
+
+        discovery = await asyncio.to_thread(wt.discover_pages, journey.target, wt.CRAWL_MAX_PAGES)
+        if not discovery.get("ok"):
+            return ChatReply(text="I couldn't re-crawl the site to expand the plan.", warnings=warnings)
+        plan = wt.build_plan(discovery)
+        plan = await wt.enrich_plan_with_model(plan, self.provider)
+        wt.stash_plan(session, plan)
+        journeys.advance(self.db, journey, journey.stage, ran=False,
+                         discovery=discovery, plan=plan)
+        return self._website_plan_reply(plan, journey, warnings)
+
+    async def _run_smoke(self, journey, ctx, warnings) -> ChatReply:
+        """Run the ≤3-min smoke subset and gate the full run on it."""
+        from ..models import JourneyStage, Project
+        from ..services import journeys
+        from ..services.smoke import run_smoke
+
+        project = self.db.get(Project, journey.project_id)
+        result = await run_smoke(self.db, project=project, journey=journey,
+                                 triggered_by=ctx.actor_id)
+        if result.get("run_id"):
+            journeys.advance(self.db, journey, JourneyStage.SMOKE, run_id=result["run_id"])
+        clean = result.get("ok")
+        suggestions = ([{"label": "Run the full suite", "text": "run the full suite"}]
+                       if clean else
+                       [{"label": "Log in for me", "text": "log in for me"},
+                        {"label": "Run anyway", "text": "run the full suite"}])
+        block = {"type": "smoke_result",
+                 **{k: result.get(k) for k in ("ok", "status", "target", "total", "passed",
+                                               "failed", "blockers", "run_id", "run_number",
+                                               "timed_out", "message")},
+                 **journeys.describe(journey)}
+        return ChatReply(text=result["message"], blocks=[block], path="onramp",
+                         warnings=warnings, suggestions=suggestions)
+
+    async def _login_with_credentials(self, journey, ctx, warnings) -> ChatReply:
+        """Sign in with the stored credentials, then promote the gated pages into
+        the tested set and hand back to guardrails with the enlarged plan."""
+        from ..models import JourneyStage, Project
+        from ..services import access, journeys
+
+        project = self.db.get(Project, journey.project_id)
+        result = await access.perform_login(self.db, project=project, journey=journey,
+                                             triggered_by=ctx.actor_id)
+        disc = journey.discovery or {}
+        if not result.get("ok"):
+            return ChatReply(
+                text=f"That sign-in didn't take ({result.get('error') or 'login failed'}). "
+                     "Re-check the credentials in the Access panel, or say 'skip gated pages'.",
+                blocks=[{"type": "access_card", "target": journey.target,
+                         "auth_count": (disc.get("skipped", {}) or {}).get("auth", 0),
+                         "gated": [], "want_credentials": True, **journeys.describe(journey)}],
+                path="onramp", warnings=warnings,
+                suggestions=[{"label": "Skip gated pages", "text": "skip gated pages"}])
+        promoted = access.promote_gated(self.db, journey)
+        journeys.set_guardrails(self.db, journey,
+                                **journeys.default_guardrails(journey.target, journey.environment))
+        journeys.advance(self.db, journey, JourneyStage.GUARDRAILS)
+        note = (f" {len(promoted)} page(s) that were behind the login are now in the plan."
+                if promoted else "")
+        reply = self._guardrails_reply(journey, journey.discovery or {}, warnings)
+        reply.text = f"Signed in ({result['kind']}) and the session is sealed.{note} " + reply.text
+        return reply
+
+    async def _login_handoff(self, journey, ctx, warnings) -> ChatReply:
+        """Log-in-for-me: open a real browser parked at the login page for the user
+        to sign into; the session is sealed on resume (headed pause-and-attach)."""
+        from ..services import access
+
+        disc = journey.discovery or {}
+        login_url = next((f.get("url") for f in (disc.get("findings") or [])
+                          if f.get("kind") == "auth_gated" and f.get("url")), journey.target)
+        result = await access.begin_login_handoff(self.db, project_id=journey.project_id,
+                                                  journey=journey, login_url=login_url,
+                                                  triggered_by=ctx.actor_id)
+        from ..services import journeys
+        return ChatReply(
+            text=f"A browser is opening at {login_url}. Sign in there, then click Resume and I'll "
+                 "seal the session and test the pages behind the login. (Headed sign-in runs on a "
+                 "machine with a display; on this headless server it parks for the resume signal.)",
+            blocks=[{"type": "access_handoff", "target": journey.target, "login_url": login_url,
+                     "run_id": result.get("run_id"), "run_number": result.get("run_number"),
+                     "handoff_key": result.get("handoff_key"), **journeys.describe(journey)}],
+            path="onramp", warnings=warnings,
+            suggestions=[{"label": "Skip gated pages", "text": "skip gated pages"}])
+
+    async def _run_golden_path(self, journey, ctx, warnings) -> ChatReply:
+        """Approve the built suite and run it; return the Run board."""
+        from ..models import JourneyStage, Project
+        from ..services import journeys
+        from ..services.golden_run import run_full
+
+        project = self.db.get(Project, journey.project_id)
+        board = await run_full(self.db, project=project, journey=journey,
+                               triggered_by=ctx.actor_id)
+        if not board.get("run_id"):
+            return ChatReply(text=board.get("message", "Nothing to run. Build the tests first."),
+                             path="onramp", warnings=warnings,
+                             suggestions=[{"label": "Build the tests", "text": "build the tests"}])
+        journeys.advance(self.db, journey, JourneyStage.RUN, run_id=board["run_id"])
+        tot = board["totals"]
+        if board["done"]:
+            text = (f"Ran {tot['total']} test(s) on {journey.target}: {tot['passed']} passed, "
+                    f"{tot['failed']} failed (no model, $0). "
+                    + ("Clean. On to readiness." if not board["has_failures"] else "Triage the failures next."))
+        else:
+            text = (f"Running {tot['total']} test(s) on {journey.target}: {tot['passed']} passed, "
+                    f"{tot['failed']} failed so far. Watch it live in Runs.")
+        suggestions = ([{"label": "Triage failures", "text": "triage"}] if board["has_failures"]
+                       else [{"label": "What's next", "text": "what's next"}])
+        return ChatReply(text=text, blocks=[{**board, "type": "run_board",
+                                             **journeys.describe(journey)}],
+                         path="onramp", warnings=warnings, suggestions=suggestions)
+
+    async def _triage(self, journey, t, ctx, warnings) -> ChatReply:
+        """Group the current run's failures into a board of dispositions."""
+        from ..models import JourneyStage, Run
+        from ..services import journeys
+        from ..services.triage import triage_board
+
+        run = self.db.get(Run, journey.run_id) if journey.run_id else None
+        if run is None:
+            return ChatReply(text="No run to triage yet. Run the suite first.",
+                             path="onramp", warnings=warnings,
+                             suggestions=[{"label": "Run the full suite", "text": "run the full suite"}])
+        board = triage_board(self.db, run, journey)
+        journeys.advance(self.db, journey, JourneyStage.TRIAGE, run_id=run.id)
+        if board["group_count"] == 0:
+            text = f"Nothing to triage. Every test on {journey.target} passed."
+            suggestions = [{"label": "What's next", "text": "what's next"}]
+        else:
+            text = (f"{board['group_count']} failure group(s) on {journey.target}; "
+                    f"{board['open_count']} still need a disposition.")
+            suggestions = [{"label": "What's next", "text": "what's next"}]
+        return ChatReply(text=text, blocks=[{**board, "type": "triage_board",
+                                            **journeys.describe(journey)}],
+                         path="onramp", warnings=warnings, suggestions=suggestions)
+
+    async def _share(self, journey, t, ctx, warnings) -> ChatReply:
+        """Publish the release report (v2) in every format through the storage
+        interface, and return the Share card. No format is a dead end; the team
+        integrations are offered but gated behind an approval."""
+        import re
+
+        from ..models import JourneyStage, Project, Run
+        from ..services import journeys, share
+
+        run = self.db.get(Run, journey.run_id) if journey.run_id else None
+        if run is None:
+            return ChatReply(text="Nothing to share yet. Run the suite first.",
+                             path="onramp", warnings=warnings,
+                             suggestions=[{"label": "Run the full suite", "text": "run the full suite"}])
+        project = self.db.get(Project, journey.project_id)
+        stakeholder = bool(re.search(r"\bstakeholder\b|\bexec(utive)?\b", t))
+        result = await share.publish(self.db, project, journey, run, stakeholder=stakeholder,
+                                     actor=ctx.actor_id)
+        journeys.advance(self.db, journey, JourneyStage.REPORT, run_id=run.id)
+        return ChatReply(
+            text=(f"Published the release report for {journey.target}"
+                  + (" (stakeholder view: names, links and screenshots redacted)" if stakeholder else "")
+                  + f". Public link expires in 30 days. Formats: {', '.join(result['formats'])}."),
+            blocks=[{"type": "share_card", "target": journey.target,
+                     "share_url": result["share_url"], "urls": result["urls"],
+                     "formats": result["formats"], "public": result["public"],
+                     "pdf_status": result.get("pdf_status"),
+                     "stakeholder": stakeholder, "run_number": run.number,
+                     **journeys.describe(journey)}],
+            path="onramp", warnings=warnings,
+            suggestions=[{"label": "Keep it green", "text": "keep it green"},
+                         {"label": "What's next", "text": "what's next"}])
+
+    async def _explore(self, journey, t, ctx, warnings) -> ChatReply:
+        """Run a guardrail-bounded, timeboxed exploration and return an anomaly card."""
+        import re
+
+        from ..models import JourneyStage, Project
+        from ..services import exploration, journeys
+
+        area_m = re.search(r"\b(?:poke at|explore)\s+([\w/\-.]+)", t)
+        role_m = re.search(r"\bas (?:an?\s+)?([\w \-]+?)(?:\s+for\b|\s+on\b|$)", t)
+        min_m = re.search(r"\bfor\s+(\d+)\s*(?:min|minute)", t)
+        area = (area_m.group(1) if area_m else "/").strip()
+        role = (role_m.group(1).strip() if role_m else "a user")
+        minutes = int(min_m.group(1)) if min_m else 10
+
+        project = self.db.get(Project, journey.project_id)
+        result = await exploration.explore_now(
+            self.db, project=project, journey=journey, area=area, role=role,
+            minutes=minutes, actor=ctx.actor_id)
+        journeys.advance(self.db, journey, JourneyStage.EXPLORE, ran=False)
+        session = result["session"]
+        findings = result["findings"]
+        n = len(findings)
+        high = sum(1 for f in findings if f["severity"] == "high")
+        text = (f"Explored {area} as {role} for up to {minutes} min: "
+                + (f"{n} anomaly(ies)" + (f", {high} high" if high else "") + "."
+                   if n else "nothing worth reporting.")
+                + (" (still running, watch it live.)" if result["timed_out"] else ""))
+        return ChatReply(
+            text=text,
+            blocks=[{"type": "anomaly_card", "session_id": session.id, "area": area,
+                     "role": role, "minutes": minutes, "summary": session.summary,
+                     "findings": findings, **journeys.describe(journey)}],
+            path="onramp", warnings=warnings,
+            suggestions=[{"label": "What's next", "text": "what's next"}])
+
+    async def _keep_green(self, journey, t, ctx, warnings) -> ChatReply:
+        """Turn the run into an ongoing guarantee: a schedule, a CI workflow, and
+        webhook routing."""
+        import re
+
+        from ..models import JourneyStage, Project
+        from ..services import journeys, keepgreen
+
+        project = self.db.get(Project, journey.project_id)
+        m = re.search(r"\bcron\s+([\d*/,\- ]+)$", t)
+        cron = m.group(1).strip() if m else keepgreen.DEFAULT_CRON
+        result = keepgreen.keep_green(self.db, project, journey, cron=cron, actor=ctx.actor_id)
+        journeys.advance(self.db, journey, JourneyStage.KEEP_GREEN, run_id=journey.run_id)
+        sched = result["schedule"]
+        routing = (f"{result['webhooks_active']} webhook(s) active: run.finished / run.failed will fire"
+                   if result["webhooks_active"] else
+                   "No webhooks yet. Add one in Settings to route results to Slack.")
+        return ChatReply(
+            text=(f"Keeping {journey.target} green: scheduled **{sched['human_cron']}** "
+                  f"({sched['tests']} test(s)), a GitHub Actions workflow is ready to copy, and "
+                  f"{routing.lower()}").replace("**", ""),
+            blocks=[{"type": "keep_green_card", "target": journey.target,
+                     "schedule": sched, "github_action": result["github_action"],
+                     "webhooks_active": result["webhooks_active"], "routing": routing,
+                     **journeys.describe(journey)}],
+            path="onramp", warnings=warnings,
+            suggestions=[{"label": "Add a webhook", "text": "open settings"},
+                         {"label": "What's next", "text": "what's next"}])
+
+    async def _make_test(self, journey, t, ctx, warnings) -> ChatReply:
+        """Promote an exploratory finding into a proposed test."""
+        import re
+
+        from ..services import exploration
+        m = re.search(r"\bfor ([0-9a-f]{6,})\b", t)
+        if not m:
+            return ChatReply(text="Say 'make a test for <finding-id>' (the id is on the anomaly "
+                                  "card).", path="onramp", warnings=warnings)
+        result = exploration.promote_finding(self.db, project_id=journey.project_id,
+                                             finding_id=m.group(1), journey=journey,
+                                             actor=ctx.actor_id)
+        if not result.get("ok"):
+            return ChatReply(text=f"Couldn't promote that: {result.get('error')}",
+                             path="onramp", warnings=warnings)
+        if result.get("already"):
+            return ChatReply(text="That finding is already a test.", path="onramp", warnings=warnings)
+        return ChatReply(
+            text=f"Filed **{result['key']}** from the {result['kind']} finding: proposed, "
+                 "awaiting your review in Tests.".replace("**", ""),
+            path="onramp", warnings=warnings,
+            suggestions=[{"label": "Open in Tests", "text": "show the tests"}])
+
+    async def _readiness(self, journey, t, ctx, warnings) -> ChatReply:
+        """The Go/No-Go gate. Show the criteria; a request to *sign* is declined:
+        an AI principal can never satisfy the gate, a human signs it."""
+        import re
+
+        from ..models import Run
+        from ..services import journeys, readiness
+
+        run = self.db.get(Run, journey.run_id) if journey.run_id else None
+        if run is None:
+            return ChatReply(text="No run to assess yet. Run the suite first.",
+                             path="onramp", warnings=warnings,
+                             suggestions=[{"label": "Run the full suite", "text": "run the full suite"}])
+        result = readiness.evaluate(self.db, journey, run)
+        block = {"type": "readiness_card", **result, **journeys.describe(journey)}
+        wants_sign = bool(re.search(r"\bsign.?off\b", t))
+        if wants_sign and not result["signoff"]:
+            # The rule, embodied: the agent refuses to sign, and says who can.
+            return ChatReply(
+                text=(f"I can't sign this off. A release-readiness decision is a human's to own, "
+                      f"never the agent's. {journey.target} is **{result['verdict'].replace('_', '-').upper()}**"
+                      f"{' (all criteria pass)' if result['verdict'] == 'go' else ' (' + str(len(result['failed_criteria'])) + ' criterion(s) failing)'}. "
+                      "Use **Sign off** on the card to record your decision.").replace("**", ""),
+                blocks=[block], path="onramp", warnings=warnings,
+                suggestions=[{"label": "Open the report", "text": "show the run report"}])
+        verdict = result["verdict"].replace("_", "-").upper()
+        signed = result["signoff"]
+        text = (f"Readiness for {journey.target}: **{verdict}**. "
+                + ("Signed off by " + signed["signer_name"] + "." if signed
+                   else ("All criteria pass. Ready for a human sign-off."
+                         if result["verdict"] == "go"
+                         else f"{len(result['failed_criteria'])} criterion(s) block release."))).replace("**", "")
+        return ChatReply(text=text, blocks=[block], path="onramp", warnings=warnings,
+                         suggestions=[{"label": "Open the report", "text": "show the run report"},
+                                      {"label": "Triage failures", "text": "triage"}])
+
+    async def _disposition(self, journey, t, ctx, warnings) -> ChatReply:
+        """Apply a disposition (rerun / quarantine / mark-expected / …) to a group."""
+        import re
+
+        from ..models import Run
+        from ..services import journeys
+        from ..services.triage import DISPOSITIONS, set_disposition, triage_board
+
+        run = self.db.get(Run, journey.run_id) if journey.run_id else None
+        if run is None:
+            return ChatReply(text="No triaged run to act on.", path="onramp", warnings=warnings)
+        board = triage_board(self.db, run, journey)
+        # Map the verb to a disposition; target the group named after "for"/quotes,
+        # else the first still-open failure group.
+        verb = ("mark_expected" if re.search(r"\bmark expected\b", t)
+                else "file_bug" if re.search(r"\bfile (a )?bug\b", t)
+                else next((d for d in ("rerun", "quarantine", "heal") if d in t), None))
+        if verb not in DISPOSITIONS:
+            return ChatReply(text="I didn't catch which disposition. Try 'quarantine', 'rerun', "
+                                  "'heal', 'mark expected', or 'file a bug'.",
+                             path="onramp", warnings=warnings)
+        m = re.search(r"\bfor (.+)$", t)
+        want = (m.group(1).strip().strip("'\"") if m else "")
+        groups = board["groups"]
+        target = next((g for g in groups if want and want.lower() in g["signature"].lower()),
+                      None) or next((g for g in groups if not g["disposition"]), None)
+        if target is None:
+            return ChatReply(text="No open failure group to disposition.", path="onramp",
+                             warnings=warnings)
+
+        # Rerun is special: it re-runs the group ×3 in isolation and lets the
+        # results decide: a pass on retry flips the class to flaky automatically.
+        if verb == "rerun":
+            from ..models import Project
+            from ..services import rerun as rerun_svc
+            project = self.db.get(Project, journey.project_id)
+            res = await rerun_svc.rerun_x3(self.db, project=project, journey=journey,
+                                           signature=target["signature"], actor=ctx.actor_id)
+            if not res.get("ok"):
+                return ChatReply(text=res.get("message", "Couldn't rerun that group."),
+                                 path="onramp", warnings=warnings)
+            new_board = res["board"]
+            runs = ", ".join(f"#{n}" for n in res["child_runs"])
+            if res["flipped"]:
+                text = (f"Reran ×3 ({runs}): {len(res['flipped'])} test(s) passed on retry → "
+                        f"reclassified **flaky**, quarantine suggested. "
+                        f"{new_board['open_count']} group(s) still open.").replace("**", "")
+            else:
+                text = (f"Reran ×3 ({runs}): failed every time, so confidence in the failure is high. "
+                        f"{new_board['open_count']} group(s) still open.")
+            return ChatReply(text=text, blocks=[{**new_board, "type": "triage_board",
+                                                **journeys.describe(journey)}],
+                             path="onramp", warnings=warnings,
+                             suggestions=([{"label": "Quarantine it",
+                                            "text": f"quarantine for {target['signature']}"}]
+                                          if res["suggest_quarantine"] else
+                                          [{"label": "What's next", "text": "what's next"}]))
+
+        result = set_disposition(self.db, run, target["signature"], verb, actor=ctx.actor_id)
+        new_board = result["board"]
+        note = {"quarantine": "quarantined (7-day expiry)", "mark_expected": "marked expected",
+                "heal": "sent to heal review", "file_bug": "bug filing filed for approval"}.get(verb, verb)
+        text = (f"'{target['signature'][:60]}' → {note}. "
+                f"{new_board['open_count']} group(s) still open.")
+        return ChatReply(text=text, blocks=[{**new_board, "type": "triage_board",
+                                            **journeys.describe(journey)}],
+                         path="onramp", warnings=warnings,
+                         suggestions=[{"label": "What's next", "text": "what's next"}])
+
+    def _parse_rerun_spec(self, t: str) -> dict | None:
+        """Map a rerun phrase to a selection spec, or None if it's a triage
+        disposition ('rerun for <signature>') that belongs elsewhere."""
+        import re
+        if re.search(r"\brerun\b.*\bfor\b", t):
+            return None  # 'rerun for <sig>' → a triage disposition
+        if re.search(r"\brerun\b.*\bfail", t):
+            return {"mode": "failed", "command": t}
+        m = re.search(r"\brerun\b.*\b(?:suite\s+([a-z0-9_]+)|([a-z0-9_]+)\s+suite)\b", t)
+        if m:
+            return {"mode": "suite", "type": (m.group(1) or m.group(2)), "command": t}
+        m = re.search(r"\brerun\b.*?(?:touch(?:ed|ing)?\s+)?(/[\w\-/]+)", t)
+        if m:
+            return {"mode": "path", "path": m.group(1), "command": t}
+        if re.search(r"\brerun\b.*\b(all|everything|the (whole |full )?suite)\b", t):
+            return {"mode": "all", "command": t}
+        return None
+
+    async def _rerun(self, journey, spec, ctx, warnings) -> ChatReply:
+        """Run a slice as a child run and return the regression delta card."""
+        from ..models import JourneyStage, Project
+        from ..services import journeys, rerun
+
+        project = self.db.get(Project, journey.project_id)
+        result = await rerun.rerun(self.db, project=project, journey=journey, spec=spec,
+                                   triggered_by=ctx.actor_id)
+        if not result.get("ok"):
+            return ChatReply(text=result.get("message", "Nothing to rerun."),
+                             path="onramp", warnings=warnings,
+                             suggestions=[{"label": "Triage failures", "text": "triage"}])
+        journeys.advance(self.db, journey, JourneyStage.RUN, ran=False, run_id=result["run_id"])
+        delta = result["delta"]
+        return ChatReply(
+            text=(f"Reran {result['count']} test(s) as run #{result['run_number']}. "
+                  + delta["what_changed"]),
+            blocks=[{"type": "delta_card", **delta, "count": result["count"],
+                     **journeys.describe(journey)}],
+            path="onramp", warnings=warnings,
+            suggestions=[{"label": "Triage failures", "text": "triage"},
+                         {"label": "Show the report", "text": "share the report"}])
+
+    def _report_summary(self, rtype: str, last_run) -> tuple[str, str]:
+        """A one-line summary for a report card, computed from the builder."""
+        from ..models import Project
+
+        project = self.db.get(Project, last_run.project_id) if last_run else \
+            self.db.execute(select(Project).limit(1)).scalar_one_or_none()
+        try:
+            if rtype == "run" and last_run is not None:
+                from ..reports.runs import build_run_report
+                r = build_run_report(self.db, project, last_run)
+                s = r["summary"]
+                return (f"Run #{last_run.number}: {r['readiness']['verdict'].replace('_', ' ')}, "
+                        f"{s['passed']}/{s['total']} passed, cost ${r['cost']['cost_estimate_usd']}.",
+                        f"Run #{last_run.number} report")
+            if rtype == "coverage":
+                from ..reports.coverage import build_coverage_report
+                r = build_coverage_report(self.db, project)
+                return (f"{r['summary']['coverage_pct']}% covered, "
+                        f"{r['summary']['automation_pct']}% automated.", "Coverage report")
+            if rtype == "flaky":
+                from ..reports.flaky import build_flaky_report
+                r = build_flaky_report(self.db, project)
+                return (f"{r['summary']['flaky_count']} flaky test(s).", "Flaky report")
+            if rtype == "traceability":
+                from ..reports.traceability import build_traceability_report
+                r = build_traceability_report(self.db, project)
+                return (f"{r['summary']['covered']}/{r['summary']['total']} requirements covered.",
+                        "Traceability report")
+        except Exception:  # noqa: BLE001 (a summary is a nicety, never a failure)
+            pass
+        return ("", f"{rtype.title()} report")
 
     # ------------------------------------------------------------------ #
     async def _computed(
@@ -548,7 +1512,7 @@ class Orchestrator:
             )
             return ChatReply(
                 text=(
-                    f"**{target.test_key} — {target.title}**\n\n"
+                    f"**{target.test_key}: {target.title}**\n\n"
                     f"{report.summary}\n\n"
                     f"Category: `{report.category}` · confidence {report.confidence:.0%} "
                     f"({report.generated_by})"
@@ -572,8 +1536,8 @@ class Orchestrator:
                     + ("Upload a requirement document, or point me at one already ingested, "
                        "and I'll propose cases for review."
                        if settings.ai_enabled else
-                       "In No-AI mode I can still scaffold cases directly from the requirement "
-                       "structure — open Requirements → Generate to review the deterministic "
+                       "Even without a model I can scaffold cases directly from the requirement "
+                       "structure. Open Requirements → Generate to review the deterministic "
                        "proposals.")
                 ),
                 blocks=[{"type": "cta", "action": "open_requirements",
@@ -638,7 +1602,7 @@ class Orchestrator:
             run = result["run"]
             triage = run.get("triage") or {}
             return ChatReply(
-                text=triage.get("headline") or f"Run #{run['number']} — {run['status']}.",
+                text=triage.get("headline") or f"Run #{run['number']}: {run['status']}.",
                 blocks=[{"type": "run_summary", "run": run, "results": result["results"]}],
             )
         if tool == "select_tests_for_change":
@@ -718,9 +1682,39 @@ _NO_AI_CAPABILITIES = [
     "Statistical flaky-test detection",
     "Regression triage (new vs known vs flaky)",
     "Evidence-based root-cause analysis",
-    "Deterministic locator healing",
+    "Deterministic locator healing, with a cached zero-token re-run",
     "Full reporting, dashboards and audit trail",
 ]
+
+
+#: Plain-English names for the plan's test types, so "enable accessibility" or
+#: "drop visual" find the right row.
+_TYPE_ALIASES = {
+    "accessibility": "a11y", "a11y": "a11y", "axe": "a11y",
+    "performance": "perf", "perf": "perf", "cwv": "perf", "web vitals": "perf",
+    "visual": "visual", "snapshot": "visual", "screenshot": "visual",
+    "responsive": "responsive", "viewport": "responsive",
+    "cross-browser": "cross_browser", "cross browser": "cross_browser", "browser": "cross_browser",
+    "security": "security", "seo": "seo",
+    "resilience": "resilience", "chaos": "resilience",
+    "api": "api", "contract": "api",
+    "forms": "forms", "form": "forms",
+    "links": "links", "link": "links",
+    "functional": "functional", "e2e": "functional",
+    "data-driven": "data_driven", "data driven": "data_driven",
+    "exploratory": "exploratory", "charter": "exploratory",
+    "manual": "manual",
+}
+
+
+def _match_type_key(text: str, types: list[dict]) -> str | None:
+    """Map free text ("accessibility", "visual snapshots") to a plan type key."""
+    t = text.strip().lower()
+    keys = {r["key"] for r in types}
+    for phrase, key in _TYPE_ALIASES.items():
+        if phrase in t and key in keys:
+            return key
+    return None
 
 
 def _best_match(failures: list[RunTest], text: str) -> RunTest | None:

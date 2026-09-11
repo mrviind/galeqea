@@ -5,4 +5,4 @@ contact_links:
     about: "How do I…? Ideas, and show-and-tell. Please don't use the issue tracker for questions."
   - name: Security vulnerability
     url: https://github.com/mrviind/galeqea/security/policy
-    about: Report privately — never in a public issue. See SECURITY.md.
+    about: Report privately, never in a public issue. See SECURITY.md.

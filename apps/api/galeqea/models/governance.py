@@ -138,7 +138,7 @@ class VaultSecret(Base, IdMixin, TimestampMixin):
     rotated_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    #: Non-secret configuration that belongs with the credential — which model
+    #: Non-secret configuration that belongs with the credential: which model
     #: the key is for, its endpoint, its spend cap. Keeping it here means a
     #: project's whole model setup moves, and is revoked, as one unit.
     meta: Mapped[dict] = mapped_column(JSONish, default=dict)

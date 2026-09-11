@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { ChatMessage } from '../../lib/api';
 import { useApp, useEvents } from '../../state';
-import { focusPane, useWorkspace } from '../../workspace';
+import type { RunCommandDetail } from '../../workspace';
+import { PREFILL_CHAT_EVENT, RUN_COMMAND_EVENT, focusPane, useWorkspace } from '../../workspace';
+import { JourneyRail, stageLabel, type RailStage } from '../JourneyRail';
 import { MessageInput } from './MessageInput';
 import { MessageList, type ToolActivity } from './MessageList';
 
+// Shared across every mounted Copilot (the docked one and the hidden-but-mounted
+// mobile drawer). A RUN_COMMAND_EVENT fires on all of them synchronously; the
+// first to see a token claims it here so the rest skip: one click, one send.
+let _handledRunToken = -1;
+
 /**
- * The Agent Copilot — the persistent right dock.
+ * The QE Agent: the persistent right dock.
  *
  * Every credential it uses is resolved server-side. There is no key in this
  * component, no key in the store, and nothing written to localStorage beyond the
@@ -16,14 +24,15 @@ import { MessageList, type ToolActivity } from './MessageList';
  * ledger, and returns the reply.
  */
 
-/** Suggestions double as documentation of what plain English is understood. */
+/** The fresh-session greeting shows example commands, one per beat of the QE arc
+ *  (explore & build → run → diagnose), led by the flagship on-ramp, plus a one-click
+ *  path into the bundled demo. They double as documentation of the plain English the
+ *  agent understands. (`make demo` serves the demo app on :8765.) */
 const SUGGESTIONS = [
+  'test https://www.aravindarumugam.com',
+  'test http://localhost:8765',
   'run the smoke tests on staging',
-  'rerun only failed',
-  "what's not tested?",
-  'which tests are flaky?',
   'why did the last run fail?',
-  'schedule regression nightly at 2am',
 ];
 
 const MODEL_PREF_KEY = 'galeqea.copilot.model';
@@ -31,9 +40,11 @@ const MODEL_PREF_KEY = 'galeqea.copilot.model';
 export function AgentCopilot() {
   const { project } = useApp();
   const { applyToolProjection } = useWorkspace();
+  const location = useLocation();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [focusSignal, setFocusSignal] = useState(0);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ label: string; at: string }[]>([]);
   const [tools, setTools] = useState<ToolActivity[]>([]);
@@ -43,7 +54,7 @@ export function AgentCopilot() {
   const [draft, setDraft] = useState('');
   const [preview, setPreview] = useState<{ intent: string; explanation: string; path: string } | null>(null);
   const [model, setModel] = useState<{ provider: string; model: string } | null>(() => {
-    // A preference, not a secret — which model to talk to, never how to reach it.
+    // A preference, not a secret: which model to talk to, never how to reach it.
     try {
       const raw = localStorage.getItem(MODEL_PREF_KEY);
       return raw ? (JSON.parse(raw) as { provider: string; model: string }) : null;
@@ -78,7 +89,7 @@ export function AgentCopilot() {
 
   // Tool execution is tracked separately from narrative status, because the two
   // answer different questions. Status says what the agent is thinking about;
-  // tool activity says what it is *doing to your project* — which tool, whether
+  // tool activity says what it is *doing to your project*: which tool, whether
   // it only reads, and whether it will need your approval. Flattening both into
   // one list of grey lines throws that away.
   useEvents(['chat.status', 'chat.delta', 'agent.started', 'agent.tool_call', 'agent.step', 'agent.finished'], (event) => {
@@ -118,7 +129,7 @@ export function AgentCopilot() {
       const { tool, ok, duration_ms, summary, step, ui } = event.payload;
 
       // A tool that returned a `_ui` projection drives the Left Canvas. The
-      // pane is focused only when the tool succeeded — pushing a failed lookup
+      // pane is focused only when the tool succeeded. Pushing a failed lookup
       // onto the canvas would replace whatever the user was reading with an
       // error they did not ask to see.
       if (ok !== false && ui && typeof ui === 'object') {
@@ -126,8 +137,8 @@ export function AgentCopilot() {
         if (filled) focusPane(filled);
       }
 
-      // Resolve the matching running entry rather than appending a second row —
-      // otherwise every tool appears twice, once starting and once finished.
+      // Resolve the matching running entry rather than appending a second row.
+      // Otherwise every tool appears twice, once starting and once finished.
       setTools((prev) => {
         const key = `${step}:${tool}`;
         const index = prev.findIndex((t) => t.key === key && t.state === 'running');
@@ -163,6 +174,7 @@ export function AgentCopilot() {
     }, 350);
   }, [project]);
 
+  // Let any part of the canvas (the "test any website" field) drive the agent.
   const send = useCallback(async (override?: string) => {
     const text = (override ?? input).trim();
     if (!text || !project || !sessionId || busy) return;
@@ -182,8 +194,9 @@ export function AgentCopilot() {
         suggestions?: ChatMessage['suggestions'];
       }>(
         `/api/projects/${project.id}/chat/sessions/${sessionId}/messages`,
-        // The model identifier goes up; the credential never comes down.
-        { text, provider: model?.provider, model: model?.model },
+        // The model identifier goes up; the credential never comes down. `page`
+        // tells the agent which view is open so it can answer questions about it.
+        { text, provider: model?.provider, model: model?.model, page: location.pathname },
       );
       setDraft('');
       setMessages((prev) => [
@@ -207,12 +220,41 @@ export function AgentCopilot() {
     }
   }, [input, project, sessionId, busy, model]);
 
+  // A URL typed into the "test any website" field on the canvas, or an
+  // "approve" from a plan card, arrives here. Dedupe by token so a single
+  // dispatch reaching multiple mounted Copilots is sent exactly once.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<RunCommandDetail>).detail;
+      if (!detail || detail.token === _handledRunToken) return;
+      _handledRunToken = detail.token;
+      if (detail.text) void send(detail.text);
+    };
+    window.addEventListener(RUN_COMMAND_EVENT, handler);
+    return () => window.removeEventListener(RUN_COMMAND_EVENT, handler);
+  }, [send]);
+
+  // The canvas empty-state hands the URL entry to the agent: drop the seed text
+  // into the input (without sending) and focus it, so testing a site always starts
+  // here in the QE Agent rather than a separate form on the canvas.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const seed = (e as CustomEvent<string>).detail ?? '';
+      setInput(seed);
+      setFocusSignal((n) => n + 1);
+    };
+    window.addEventListener(PREFILL_CHAT_EVENT, handler);
+    return () => window.removeEventListener(PREFILL_CHAT_EVENT, handler);
+  }, []);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3">
-        <span className="text-[12px] font-semibold tracking-tight text-ink">Agent Copilot</span>
+        <span className="text-[12px] font-semibold tracking-tight text-ink">QE Agent</span>
         <span className="text-[10.5px] text-ink-3">plain English, live</span>
       </header>
+
+      <JourneyProgress projectId={project?.id} tick={messages.length} />
 
       <MessageList
         messages={messages}
@@ -233,7 +275,37 @@ export function AgentCopilot() {
         preview={preview}
         model={model}
         onModelChange={setModel}
+        focusSignal={focusSignal}
       />
+    </div>
+  );
+}
+
+
+/**
+ * The active journey's progress rail, shown under the chat header. Polls
+ * `/journey` on mount and after each new message (so it advances as the target
+ * moves through the Golden Path), and hides itself when there's no journey.
+ */
+function JourneyProgress({ projectId, tick }: { projectId?: string; tick: number }) {
+  const [journey, setJourney] = useState<{ active: boolean; rail?: RailStage[]; stage?: string; target?: string } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let alive = true;
+    api.get<any>(`/api/projects/${projectId}/journey`)
+      .then((j) => { if (alive) setJourney(j); })
+      .catch(() => { /* the rail is optional chrome */ });
+    return () => { alive = false; };
+  }, [projectId, tick]);
+
+  if (!journey?.active || !journey.rail?.length) return null;
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface-2/40 px-3 py-1.5">
+      <span className="shrink-0 text-[9.5px] font-semibold uppercase tracking-wide text-ink-3">
+        {stageLabel(journey.stage ?? '')}
+      </span>
+      <JourneyRail rail={journey.rail} compact />
     </div>
   );
 }

@@ -25,7 +25,7 @@ its users: **no AI-generated change reaches `main` without a human who read it.*
 This is the same principle as the approval gate in the product. A project that
 would not apply its own rule to itself has not really made the argument.
 
-## Commit messages — Conventional Commits
+## Commit messages: Conventional Commits
 
 Commits follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/).
 The format is machine-readable, so the changelog and the next version number are
@@ -34,26 +34,26 @@ derived from history rather than hand-maintained:
 ```
 <type>[optional scope][!]: <description>
 
-[optional body — the *why*, wrapped at 72 columns]
+[optional body: the *why*, wrapped at 72 columns]
 
 [optional footers]
 ```
 
-**Types** — the ones this repo uses:
+**Types** used in this repo:
 
 | Type | For | Version effect |
 |---|---|---|
 | `feat` | a new capability a user can see | MINOR |
 | `fix` | a bug fix | PATCH |
 | `perf` | a change that only makes something faster | PATCH |
-| `refactor` | a change that alters neither behaviour nor the API | — |
-| `test` | adding or correcting tests | — |
-| `docs` | documentation only | — |
-| `build` | dependencies, packaging, the Makefile | — |
-| `ci` | CI configuration | — |
-| `chore` | anything else that touches no product behaviour | — |
+| `refactor` | a change that alters neither behaviour nor the API | none |
+| `test` | adding or correcting tests | none |
+| `docs` | documentation only | none |
+| `build` | dependencies, packaging, the Makefile | none |
+| `ci` | CI configuration | none |
+| `chore` | anything else that touches no product behaviour | none |
 
-**Scope** is the part of the system you touched — prefer one of `gate`, `healing`,
+**Scope** is the part of the system you touched. Prefer one of `gate`, `healing`,
 `app-model`, `runner`, `mcp`, `agent`, `codegen`, `web`, `integrations`, `audit`.
 
 **Breaking changes** append `!` before the colon **and** carry a `BREAKING CHANGE:`
@@ -81,7 +81,7 @@ test(gate): prove git.open_pr routes through the approval gate
 
 Keep the description in the imperative mood, lower-case, and under ~72 characters,
 with no trailing full stop. The `Assisted-by:` and `Signed-off-by:` trailers below
-are themselves Conventional-Commits footers — they belong in the same block.
+are themselves Conventional-Commits footers, so they belong in the same block.
 
 ## What good work looks like here
 
@@ -111,15 +111,15 @@ the case, not by reading the code.
 
 ## Style
 
-**Python** — Ruff, line length 100, `from __future__ import annotations`, type hints
+**Python**: Ruff, line length 100, `from __future__ import annotations`, type hints
 throughout. Comments explain *why*, never *what*; if a comment restates the code,
 delete it.
 
-**TypeScript** — strict mode. No `any` in exported signatures. Components are
+**TypeScript**: strict mode. No `any` in exported signatures. Components are
 self-contained; group Tailwind classes layout → spacing → typography → colour →
 effects.
 
-**JavaScript (runner)** — ESM, no build step, no dependencies beyond Playwright.
+**JavaScript (runner)**: ESM, no build step, no dependencies beyond Playwright.
 The runner must stay simple enough to audit in one sitting.
 
 ## Adding a tool
@@ -145,13 +145,13 @@ def _apply_archive(db, request):
     ...
 ```
 
-Add the risk tier to `ACTION_RISK`. Anything unlisted defaults to `HIGH` — a new
+Add the risk tier to `ACTION_RISK`. Anything unlisted defaults to `HIGH`: a new
 action fails closed.
 
 A tool that reaches an outside system (a git host, Jira) also sets `external=True`
 and declares `scopes`. `open_test_pull_request` / `@applier("git.open_pr")` is the
 worked example: the tool half only confirms there are approved tests to push, and
-the applier half renders them to Playwright files and opens the PR — but only after
+the applier half renders them to Playwright files and opens the PR, but only after
 a human approves the `git.open_pr` request. The AI never opens the PR itself.
 
 ## Adding a step action
@@ -159,7 +159,7 @@ a human approves the `git.open_pr` request. The AI never opens the PR itself.
 1. Add the verb to `StepAction` in `models/testing.py`.
 2. Implement it in `apps/runner/src/executor.mjs`.
 3. Render it in `engine/codegen.py` for every export target, or emit an explicit
-   `// Unsupported in export` comment — never silently drop a step.
+   `// Unsupported in export` comment; never silently drop a step.
 4. Add a case to `tests/test_codegen.py`.
 
 ## Developer Certificate of Origin
@@ -172,7 +172,7 @@ git commit -s -m "feat(app-model): add semantic diff to visual baselines"
 ```
 
 `-s` adds the `Signed-off-by:` trailer; the message stays Conventional-Commits
-shaped (see [Commit messages](#commit-messages--conventional-commits) above).
+shaped (see [Commit messages](#commit-messages-conventional-commits) above).
 
 By signing off you certify you wrote the contribution or have the right to submit it
 under Apache-2.0. Do not contribute code copied from another project, or reproduce
@@ -181,5 +181,5 @@ another product's trademarks, logos or proprietary test artefacts.
 ## Reporting bugs
 
 The most useful report includes the run id and `galeqea doctor` output. If the audit
-ledger reports a break, include `galeqea audit` — that is a serious finding and we
+ledger reports a break, include `galeqea audit`. That is a serious finding and we
 will treat it as one.

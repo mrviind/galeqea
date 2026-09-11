@@ -1,8 +1,8 @@
 """Classical test design techniques, applied to requirement text.
 
 This is the part of "AI generates test cases" that does not actually need AI.
-The techniques that find real defects — equivalence partitioning, boundary value
-analysis, decision tables — are *mechanical* once you know the input domain, and
+The techniques that find real defects (equivalence partitioning, boundary value
+analysis, decision tables) are *mechanical* once you know the input domain, and
 the input domain is usually stated in the requirement itself: "between 8 and 64
 characters", "one of Draft, Submitted or Approved", "at most 5 MB".
 
@@ -139,6 +139,9 @@ class DesignAnalysis:
     values: list[TestValue] = field(default_factory=list)
     decision_table: list[DecisionRow] = field(default_factory=list)
     conditions: list[str] = field(default_factory=list)
+    #: Pairwise (all-pairs) rows over the discrete variables, when two or more
+    #: exist. Every pair of values appears together in at least one row (WO#9-B).
+    pairwise: list[dict] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -146,6 +149,8 @@ class DesignAnalysis:
         applied = sorted({v.technique for v in self.values})
         if self.decision_table:
             applied.append("decision_table")
+        if self.pairwise:
+            applied.append("pairwise")
         return sorted(set(applied))
 
     def as_dict(self) -> dict:
@@ -154,6 +159,7 @@ class DesignAnalysis:
             "values": [v.as_dict() for v in self.values],
             "decision_table": [r.as_dict() for r in self.decision_table],
             "conditions": self.conditions,
+            "pairwise": self.pairwise,
             "techniques_applied": self.techniques_applied,
             "notes": self.notes,
         }
@@ -173,6 +179,7 @@ def analyse(text: str, *, subject: str = "input") -> DesignAnalysis:
 
     analysis.conditions = _extract_conditions(text)
     analysis.decision_table = _decision_table(analysis.conditions)
+    analysis.pairwise = _pairwise_over(analysis.variables)
 
     if not analysis.variables:
         analysis.notes.append(
@@ -300,13 +307,45 @@ def _merge_ranges(variables: list[Variable]) -> list[Variable]:
     return [*merged.values(), *others]
 
 
+#: Length units mean the variable is a *string* whose size is bounded, so the
+#: string-edge partitions (empty/null/whitespace/unicode/overflow) apply on top of
+#: the numeric boundary analysis of its length.
+_LENGTH_UNITS = ("character", "char", "letter", "digit")
+
+
+def _is_string_like(variable: Variable) -> bool:
+    if variable.kind == "format":
+        return True
+    return variable.kind == "numeric" and any(u in variable.unit for u in _LENGTH_UNITS)
+
+
+def _string_edge_values(name: str) -> list[TestValue]:
+    """The partitions a string field breaks on that a numeric range never covers:
+    empty, null, whitespace-only, unicode/emoji, and overflow (WO#9-B)."""
+    return [
+        TestValue(name, "", "empty", "invalid", "equivalence_partition",
+                  "rejected as required"),
+        TestValue(name, "__null__", "null / field absent", "invalid",
+                  "equivalence_partition", "rejected as required, not a 500"),
+        TestValue(name, "   ", "whitespace only", "invalid", "equivalence_partition",
+                  "rejected because whitespace is not content"),
+        TestValue(name, "café ☕ 你好 🧪", "unicode & emoji", "valid",
+                  "equivalence_partition", "accepted and stored without corruption"),
+        TestValue(name, "__overflow__", "far over the maximum length", "invalid",
+                  "equivalence_partition", "rejected without a server error"),
+    ]
+
+
 def _derive_values(variable: Variable) -> list[TestValue]:
     if variable.kind == "numeric":
-        return _numeric_values(variable)
+        base = _numeric_values(variable)
+        if _is_string_like(variable):
+            base += _string_edge_values(variable.name)
+        return base
     if variable.kind == "enum":
         return _enum_values(variable)
     if variable.kind == "format":
-        return _format_values(variable)
+        return _format_values(variable) + _string_edge_values(variable.name)
     if variable.kind == "boolean" and variable.required:
         return [
             TestValue(variable.name, "", "omitted", "invalid", "equivalence_partition",
@@ -315,6 +354,69 @@ def _derive_values(variable: Variable) -> list[TestValue]:
                       "equivalence_partition", "accepted"),
         ]
     return []
+
+
+def _pairwise_over(variables: list[Variable]) -> list[dict]:
+    """All-pairs rows over the discrete (enum/boolean) variables of a requirement.
+
+    Multi-parameter rules ("a shipping method AND a payment method") have a
+    combinatorial input space; pairwise covers every *pair* of values in far fewer
+    rows than the full cross-product, which is the technique's whole point. Only
+    discrete variables take part. A numeric range is covered by boundary analysis.
+    """
+    params: dict[str, list[str]] = {}
+    for v in variables:
+        if v.kind == "enum" and v.values:
+            params[v.name] = list(dict.fromkeys(v.values))
+        elif v.kind == "boolean":
+            params[v.name] = ["true", "false"]
+    return pairwise(params)
+
+
+def pairwise(params: dict[str, list[str]]) -> list[dict]:
+    """Greedy all-pairs generator. Deterministic (honours insertion order); every
+    pair of values across any two parameters appears together in at least one row.
+    Returns ``[]`` for fewer than two multi-valued parameters."""
+    from itertools import combinations
+
+    names = [n for n, vals in params.items() if vals]
+    if len(names) < 2 or sum(len(params[n]) > 1 for n in names) < 2:
+        return []
+
+    needed: set[tuple] = set()
+    for a, b in combinations(names, 2):
+        for va in params[a]:
+            for vb in params[b]:
+                needed.add((a, va, b, vb))
+
+    rows: list[dict] = []
+    guard = 0
+    while needed and guard < 1000:
+        guard += 1
+        # Seed each row from an uncovered pair (deterministic order), then fill the
+        # remaining parameters to cover the most additional pairs, an IPO-style
+        # greedy that lands close to the optimal row count.
+        sa, sva, sb, svb = min(needed)
+        row: dict[str, str] = {sa: sva, sb: svb}
+        for name in names:
+            if name in row:
+                continue
+            best_val, best_cover = params[name][0], -1
+            for val in params[name]:
+                cover = sum(
+                    1 for (a, va, b, vb) in needed
+                    if (a == name and b in row and row[b] == vb and val == va)
+                    or (b == name and a in row and row[a] == va and val == vb)
+                )
+                if cover > best_cover:
+                    best_cover, best_val = cover, val
+            row[name] = best_val
+        needed -= {
+            (a, va, b, vb) for (a, va, b, vb) in needed
+            if row.get(a) == va and row.get(b) == vb
+        }
+        rows.append(row)
+    return rows
 
 
 def _numeric_values(variable: Variable) -> list[TestValue]:
@@ -390,7 +492,7 @@ def _enum_values(variable: Variable) -> list[TestValue]:
             # the specification never gave would bake a guess into a test.
             "unspecified",
             "equivalence_partition",
-            "behaviour is undefined — the requirement does not say whether "
+            "behaviour is undefined: the requirement does not say whether "
             "matching is case sensitive. Ask before asserting either way.",
         ))
     return values
@@ -454,7 +556,7 @@ def _format_values(variable: Variable) -> list[TestValue]:
 
 # --------------------------------------------------------------------------- #
 def _extract_conditions(text: str) -> list[str]:
-    """Conditions from an "if A and B, then C" sentence — A and B, not C.
+    """Conditions from an "if A and B, then C" sentence: A and B, not C.
 
     Two things must be bounded or the consequence and the next requirement both
     end up in the table: the clause stops at the first "then" *or* comma (the

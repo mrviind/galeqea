@@ -24,6 +24,19 @@ if (args['self-test']) {
   process.exit(0);
 }
 
+// Site discovery is a self-contained, model-free crawl that prints one JSON
+// object and exits; it does not use the plan/NDJSON machinery below (which
+// would block on stdin waiting for a plan).
+if (args.discover) {
+  const { discover } = await import('./discover.mjs');
+  const result = await discover(args.discover, {
+    maxDepth: Number(args['max-depth']) || undefined,
+    maxPages: Number(args['max-pages']) || undefined,
+  });
+  process.stdout.write(JSON.stringify(result));
+  process.exit(result.ok ? 0 : 1);
+}
+
 const plan = JSON.parse(
   args.plan ? fs.readFileSync(args.plan, 'utf8') : await readStdin(),
 );
@@ -109,7 +122,72 @@ async function main(plan) {
     return;
   }
 
+  // Login is a fourth job: authenticate once and hand back the resulting
+  // storageState, so subsequent runs reuse the session with no human and without
+  // the credentials ever touching a stored test. Form logins fill the detected
+  // fields; basic-auth logins ride httpCredentials on the context.
+  if (plan.login) {
+    const engine = engines[(plan.browsers || ['chromium'])[0]] || chromium;
+    const browser = await engine.launch({ headless: plan.headless !== false });
+    const opts = {
+      viewport: plan.viewport || { width: 1440, height: 900 },
+      ignoreHTTPSErrors: plan.ignoreHTTPSErrors ?? true,
+    };
+    if ((plan.login.kind === 'basic' || plan.login.kind === 'digest') && plan.login.username) {
+      opts.httpCredentials = { username: plan.login.username, password: plan.login.password };
+    }
+    const context = await browser.newContext(opts);
+    const page = await context.newPage();
+    page.setDefaultTimeout(plan.defaultTimeoutMs || 15000);
+    let ok = false, error = null, storageState = null, landingUrl = null;
+    try {
+      await page.goto(plan.login.url, { waitUntil: 'domcontentloaded' });
+      if (plan.login.kind === 'form') await performFormLogin(page, plan.login);
+      ok = !plan.login.successText || (await page.content()).includes(plan.login.successText);
+      if (plan.login.kind === 'basic' || plan.login.kind === 'digest') ok = ok && page.url().startsWith('http');
+      landingUrl = page.url();
+      storageState = await context.storageState();
+    } catch (err) {
+      error = String(err.message || err).slice(0, 500);
+    } finally {
+      await context.close().catch(() => {});
+      await browser.close().catch(() => {});
+    }
+    emit('login_result', { runId: plan.runId, ok, error, storageState, landingUrl: ok ? landingUrl : null });
+    emit('run_end', { runId: plan.runId, totals: { total: 0 }, durationMs: Date.now() - started, cancelled });
+    return;
+  }
+
+  // PDF is a fifth job: render given HTML to a PDF with the same Chromium we
+  // already ship, so the stakeholder report needs no extra print service.
+  if (plan.pdf) {
+    const engine = engines.chromium || chromium;
+    const browser = await engine.launch({ headless: true });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    // Write the PDF to a file and hand back the path; a base64 blob on a single
+    // NDJSON line can exceed the reader's line limit for a real-size report.
+    const outName = 'render.pdf';
+    let ok = false, error = null;
+    try {
+      await page.setContent(plan.pdf.html || '', { waitUntil: 'load' });
+      await page.pdf({ path: path.join(artifactsDir, outName), format: 'A4',
+        printBackground: true,
+        margin: { top: '16mm', bottom: '16mm', left: '14mm', right: '14mm' } });
+      ok = true;
+    } catch (err) {
+      error = String(err.message || err).slice(0, 500);
+    } finally {
+      await context.close().catch(() => {});
+      await browser.close().catch(() => {});
+    }
+    emit('pdf_result', { runId: plan.runId, ok, error, path: ok ? outName : null });
+    emit('run_end', { runId: plan.runId, totals: { total: 0 }, durationMs: Date.now() - started, cancelled });
+    return;
+  }
+
   const totals = { passed: 0, failed: 0, skipped: 0, flaky: 0, blocked: 0, needs_review: 0 };
+  const rateLimiter = makeRateLimiter(plan.rateLimitRps);
 
   for (const browserName of plan.browsers || ['chromium']) {
     const engine = engines[browserName];
@@ -138,7 +216,7 @@ async function main(plan) {
     async function worker() {
       while (queue.length && !cancelled) {
         const testCase = queue.shift();
-        const outcome = await runOne(browser, browserName, testCase, plan, artifactsDir);
+        const outcome = await runOne(browser, browserName, testCase, plan, artifactsDir, rateLimiter);
         totals[outcome] = (totals[outcome] || 0) + 1;
         emit('run_progress', {
           runId: plan.runId,
@@ -161,7 +239,7 @@ async function main(plan) {
   });
 }
 
-async function runOne(browser, browserName, testCase, plan, artifactsDir) {
+async function runOne(browser, browserName, testCase, plan, artifactsDir, rateLimiter) {
   const startedAt = Date.now();
   emit('test_start', {
     testId: testCase.id, testCaseId: testCase.testCaseId, key: testCase.key,
@@ -174,6 +252,7 @@ async function runOne(browser, browserName, testCase, plan, artifactsDir) {
     ignoreHTTPSErrors: plan.ignoreHTTPSErrors ?? true,
     recordVideo: plan.video ? { dir: artifactsDir } : undefined,
     storageState: testCase.storageState || plan.storageState || undefined,
+    httpCredentials: testCase.httpCredentials || plan.httpCredentials || undefined,
     locale: plan.locale || 'en-US',
     timezoneId: plan.timezone || undefined,
     colorScheme: plan.colorScheme || undefined,
@@ -191,7 +270,7 @@ async function runOne(browser, browserName, testCase, plan, artifactsDir) {
 
   const executor = new Executor({
     page, context, run: plan, artifacts: artifactsDir,
-    testCase: { ...testCase, id: testCase.id },
+    testCase: { ...testCase, id: testCase.id }, rateLimiter,
   });
 
   let status = 'passed';
@@ -227,6 +306,18 @@ async function runOne(browser, browserName, testCase, plan, artifactsDir) {
     if (video) artifacts.push({ kind: 'video', path: video, label: 'recording' });
   } catch { /* video disabled */ }
 
+  // Failure evidence: a full-page screenshot for every failed/error test, so the
+  // report always shows *what* the tester saw when it failed, captured while the
+  // page is still alive, before the context closes.
+  if ((status === 'failed' || status === 'error')
+      && !artifacts.some((a) => a.kind === 'screenshot')) {
+    try {
+      const shotPath = `${artifactsDir}/${testCase.id}-failure.png`;
+      await page.screenshot({ path: shotPath, fullPage: true, timeout: 10000 });
+      artifacts.push({ kind: 'screenshot', path: shotPath, label: 'failure evidence' });
+    } catch { /* page may already be gone */ }
+  }
+
   await context.close().catch(() => {});
 
   emit('test_end', {
@@ -252,6 +343,45 @@ async function runOne(browser, browserName, testCase, plan, artifactsDir) {
 }
 
 // --------------------------------------------------------------------- //
+// Detect and fill a login form without a scripted test: the username field by a
+// ladder of type/name/id heuristics, the password by type, the submit by
+// type/text. Deliberately generic so a plain login page needs no custom locators.
+async function performFormLogin(page, login) {
+  const userSel = login.usernameSelector ||
+    'input[type="email"], input[name="username"], input[name="user"], input[name="email"], ' +
+    'input[id*="user" i], input[id*="email" i], input[autocomplete="username"], input[type="text"]';
+  const passSel = login.passwordSelector || 'input[type="password"]';
+  await page.locator(userSel).first().fill(login.username);
+  await page.locator(passSel).first().fill(login.password);
+  const submit = page.locator(
+    login.submitSelector ||
+    'button[type="submit"], input[type="submit"], button:has-text("Login"), ' +
+    'button:has-text("Log in"), button:has-text("Sign in"), button:has-text("Submit")'
+  ).first();
+  await Promise.all([
+    page.waitForLoadState('networkidle').catch(() => {}),
+    submit.click().catch(() => {}),
+  ]);
+  await page.waitForLoadState('networkidle').catch(() => {});
+}
+
+// A shared token bucket across all workers, so `rate_limit_rps` from the target's
+// guardrails is honoured for the whole run; otherwise 54 tests on N workers would
+// hammer a production target and manufacture the very "env" failures we then have
+// to triage. Serialised on a single `next` slot; returns a no-op when unset.
+function makeRateLimiter(rps) {
+  if (!rps || rps <= 0) return async () => {};
+  const interval = 1000 / rps;
+  let next = 0;
+  return async function acquire() {
+    const now = Date.now();
+    const slot = Math.max(now, next);
+    next = slot + interval;
+    const wait = slot - now;
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  };
+}
+
 function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i++) {

@@ -130,7 +130,7 @@ def for_project(db, project_id: str | None) -> LLMProvider:
 
     This is what makes bring-your-own-key real rather than a settings field. A
     stored key is per-project with a global fallback, so one workspace can run
-    against a local model while another uses a hosted one — and the key comes
+    against a local model while another uses a hosted one, and the key comes
     from the vault, not from a value that lives only until the next restart.
     """
     from .. import keys
@@ -146,15 +146,15 @@ def for_project(db, project_id: str | None) -> LLMProvider:
         # exceeded is a bill.
         keys.check_budget(db, provider=provider, project_id=project_id)
     except keys.KeyError_ as exc:
-        # Degrade rather than crash — a spent budget must not fail a run whose
-        # other 90% needs no model at all — but carry the real reason, so the
+        # Degrade rather than crash: a spent budget must not fail a run whose
+        # other 90% needs no model at all. Carry the real reason, so the
         # user is not sent looking for a missing configuration that is fine.
         return NoAIProvider(reason=str(exc))
     except Exception:  # noqa: BLE001 - vault trouble must not break No-AI paths
         api_key, config = None, {}
 
     # A local provider (Ollama, an OpenAI-compatible endpoint) authenticates with
-    # nothing — its endpoint is the operator's own. Requiring a key here is what
+    # nothing: its endpoint is the operator's own. Requiring a key here is what
     # made `for_project` fall to No-AI for exactly the air-gapped setup the whole
     # local mode exists to serve. Only hosted providers need a credential.
     if provider not in LOCAL_PROVIDERS and api_key is None and not settings.api_key:
@@ -171,11 +171,57 @@ def for_project(db, project_id: str | None) -> LLMProvider:
         return NoAIProvider()
 
 
+#: Which cost bucket each agent role routes to. Planner = frontier reasoning;
+#: grounder = the cheap locating/healing model; judge = a mid model for verdicts.
+_ROLE_BUCKET = {
+    "orchestrator": "planner", "requirement_analyst": "planner", "test_designer": "planner",
+    "script_generator": "planner", "explorer": "planner", "coverage_cartographer": "planner",
+    "data_architect": "planner",
+    "healer": "grounder", "locator": "grounder",
+    "judge": "judge", "rca_analyst": "judge",
+}
+
+
+def bucket_for_role(role: str) -> str:
+    """Map an agent role to its model bucket (planner/grounder/judge)."""
+    return _ROLE_BUCKET.get(role, "planner")
+
+
+def for_role(db, project_id: str | None, role: str) -> LLMProvider:
+    """Resolve the provider for one agent *role*, honouring per-role model routing.
+
+    A tester's locating work (the grounder) can run on a small/cheap/local model
+    while the planner keeps a frontier model, configured as
+    ``role_models: {planner, grounder, judge}`` on the project's provider config.
+    Falls back to the project default when a role has no override (WO#8-C)."""
+    base = for_project(db, project_id)
+    if isinstance(base, NoAIProvider):
+        return base
+    from .. import keys
+
+    config = keys.config_for(db, provider=settings.provider, project_id=project_id)
+    role_models = (config.get("role_models") or {})
+    model = role_models.get(_ROLE_BUCKET.get(role, "planner"))
+    if not model or model == getattr(base, "model", None):
+        return base
+    try:
+        api_key = keys.resolve(db, provider=settings.provider, project_id=project_id)
+    except Exception:  # noqa: BLE001
+        api_key = None
+    try:
+        return build_provider(
+            provider=settings.provider, model=model,
+            api_key=api_key or settings.api_key,
+            base_url=config.get("base_url") or settings.base_url or None)
+    except ProviderError:
+        return base
+
+
 def for_selection(db, project_id: str | None, provider: str | None, model: str | None) -> LLMProvider:
     """Build a provider for a model the *client* chose.
 
     This is the server half of the Copilot's model picker, and the reason the
-    picker is safe to expose in a browser at all. The client sends two strings —
+    picker is safe to expose in a browser at all. The client sends two strings:
     a provider name and a model id. Neither is a credential. The key is unsealed
     from the vault here, on the server, and never travels in either direction.
 
@@ -206,7 +252,7 @@ def for_selection(db, project_id: str | None, provider: str | None, model: str |
 def default_provider() -> LLMProvider:
     """Process-wide provider derived from settings. Cached; reset on config change.
 
-    Used where no project is in scope. Prefer ``for_project`` — a per-project
+    Used where no project is in scope. Prefer ``for_project``: a per-project
     key cannot be honoured by a process-global instance.
     """
     global _default
@@ -229,48 +275,48 @@ def describe_modes() -> list[dict]:
     """Everything the settings UI needs to render the model chooser."""
     return [
         {
-            "mode": AIMode.NO_AI.value,
-            "label": "No AI / No Cloud",
-            "description": (
-                "Zero LLM calls and zero outbound network traffic. Authoring, "
-                "execution, scheduling, reporting, rule-based healing and "
-                "statistical flake detection all remain available."
-            ),
-            "requires": [],
-            "default": True,
-        },
-        {
             "mode": AIMode.API_KEY.value,
-            "label": "Bring your own API key",
-            "description": "Any hosted provider. The key is sealed in the local vault.",
+            "label": "Bring your own model",
+            "description": (
+                "Any hosted LLM: Anthropic, OpenAI, Gemini, Azure. The agent explores, "
+                "plans, generates tests and reasons; the key is sealed in the local vault "
+                "and capped by a budget. Recommended."
+            ),
             "requires": ["provider", "api_key", "model"],
             "providers": ["anthropic", "openai", "gemini", "azure_openai", "openai_compatible"],
+            "recommended": True,
         },
         {
             "mode": AIMode.LOCAL.value,
-            "label": "Local / offline model",
+            "label": "Local model (offline)",
             "description": (
-                "Ollama or any OpenAI-compatible endpoint. Nothing leaves the "
-                "machine, so GaleQEA runs fully air-gapped."
+                "Ollama or any OpenAI-compatible endpoint. The full agent, with nothing "
+                "leaving the machine. Genuinely air-gapped, and every run is free."
             ),
             "requires": ["base_url", "model"],
             "providers": ["ollama", "openai_compatible"],
         },
         {
-            "mode": AIMode.BYO_AGENT.value,
-            "label": "Local Claude Code bridge",
+            "mode": AIMode.NO_AI.value,
+            "label": "No model (deterministic only)",
             "description": (
-                "Shells out to the Claude Code CLI you installed and authenticated "
-                "yourself. GaleQEA never sees, stores or forwards those credentials, "
-                "and this mode is unavailable on non-loopback deployments."
+                "No LLM connected. The mechanical layer still runs: execution, "
+                "deterministic healing, scheduling, reporting, flake detection, so "
+                "built tests re-run for free. Connect a model above for exploring, "
+                "planning, generating and reasoning."
             ),
-            "requires": ["claude CLI on PATH"],
+            "requires": [],
+            "default": True,
+        },
+        {
+            "mode": AIMode.BYO_AGENT.value,
+            "label": "Local agent CLI bridge",
+            "description": (
+                "Optionally drive a coding-agent CLI you have already installed and "
+                "authenticated locally. GaleQEA never sees, stores or forwards those "
+                "credentials, and this mode runs only on loopback deployments."
+            ),
+            "requires": ["agent CLI on PATH"],
             "providers": ["claude_cli"],
-            "compliance_note": (
-                "Anthropic's Claude Code legal and compliance policy (updated "
-                "2026-02-20, enforced from 2026-04-04) prohibits routing Free/Pro/Max "
-                "OAuth tokens through third-party products. This bridge is the "
-                "compliant alternative: the CLI runs locally under your own login."
-            ),
         },
     ]

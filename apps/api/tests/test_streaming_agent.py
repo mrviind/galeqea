@@ -11,7 +11,7 @@ from galeqea.core.events import Ev, bus
 
 
 class FakeStreamer(LLMProvider):
-    """Yields a preamble, a tool call, then — on the next turn — a final answer."""
+    """Yields a preamble, a tool call, then (on the next turn) a final answer."""
 
     name = "fake"
     supports_streaming = True

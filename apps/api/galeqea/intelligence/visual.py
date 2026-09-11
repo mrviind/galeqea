@@ -140,7 +140,7 @@ async def compare(
     if baseline is None:
         return (
             VisualDiff(changed=False, severity="none",
-                       summary="no baseline yet — this run establishes one"),
+                       summary="no baseline yet, so this run establishes one"),
             None,
             {},
         )
@@ -194,7 +194,7 @@ async def compare(
             VisualDiff(
                 changed=True, severity="cosmetic",
                 summary=(
-                    f"Appearance shifted but every element and label is unchanged — "
+                    f"Appearance shifted but every element and label is unchanged, "
                     f"most likely styling. {pixel_note}."
                 ),
                 structural=structural, perceptual_distance=distance,

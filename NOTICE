@@ -10,3 +10,23 @@ You may obtain a copy of the License at
 
 All source code in this repository is original work. No code, trademarks,
 logos or proprietary test artefacts from any other project are reproduced here.
+
+--------------------------------------------------------------------------------
+Third-party dependencies
+--------------------------------------------------------------------------------
+
+GaleQEA is licensed under Apache-2.0. Every bundled runtime dependency is
+permissively licensed (MIT / BSD / Apache-2.0 / ISC / MPL-2.0 / PSF and similar),
+with one reviewed exception:
+
+  * psycopg / psycopg-binary (LGPL-3.0-only). The PostgreSQL driver ships only in
+    the optional `postgres` extra, is dynamically imported, and is user-replaceable;
+    its weak copyleft does not propagate to GaleQEA. A SQLite install bundles no
+    LGPL code at all.
+
+AGPL / BSL / SSPL components (e.g. MinIO, Redis 8, Grafana) are never bundled: they
+are only ever documented, self-hosted integrations that an operator opts into.
+
+Any future non-permissive dependency must be added as a named, rationalised
+exception in `.github/scripts/check_licenses.py`; the CI license gate fails on an
+undocumented one.

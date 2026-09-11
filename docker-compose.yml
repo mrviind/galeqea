@@ -1,7 +1,17 @@
-# Single-command self-hosting:  docker compose up
+# GaleQEA: self-hosting with two profiles.
 #
-# Defaults to SQLite in a named volume so this works with no configuration.
-# Uncomment the postgres service for a multi-user deployment.
+#   Local (default, zero-config):   docker compose up
+#     App only, on SQLite in a named volume. No external services, no env vars.
+#
+#   Full (Postgres + S3 + worker):  docker compose --env-file deploy/compose/full.env up
+#     Postgres 16 (pgvector), a SeaweedFS S3 endpoint, a worker placeholder, and
+#     Valkey. The env file sets COMPOSE_PROFILES=full (so the extra services start)
+#     AND points the app at them. See docs/DEPLOY.md.
+#
+# The single `galeqea` service runs in both: with no env it uses SQLite + local-disk
+# artifacts; the full env file switches it to Postgres + S3 by interpolation. Every
+# backing service is a permissive-licensed image (PostgreSQL, Apache-2.0, BSD-3).
+# No AGPL/BSL/SSPL is ever bundled.
 
 services:
   galeqea:
@@ -14,9 +24,28 @@ services:
     environment:
       GALEQEA_HOME: /data
       GALEQEA_HOST: 0.0.0.0
-      # A deployment reachable by more than one person must not skip login.
-      GALEQEA_SINGLE_USER_MODE: "true"
-      # Model configuration is optional — GaleQEA runs fully offline without it.
+      # A deployment reachable by more than one person must not skip login, so the
+      # shared (compose) default is multi-user. `make up` on localhost stays
+      # single-user, and this is overridable the same way for a solo local trial
+      # (GALEQEA_SINGLE_USER_MODE=true docker compose up). Bootstrap the first
+      # admin by setting both vars below, or leave them unset and read the
+      # one-time setup URL from the startup logs.
+      GALEQEA_SINGLE_USER_MODE: ${GALEQEA_SINGLE_USER_MODE:-false}
+      GALEQEA_ADMIN_EMAIL: ${GALEQEA_ADMIN_EMAIL:-}
+      GALEQEA_ADMIN_PASSWORD: ${GALEQEA_ADMIN_PASSWORD:-}
+      # Backing services. Empty by default → SQLite + local-disk artifacts (the
+      # zero-config local profile). The full env file fills these in to select
+      # Postgres + S3; the entrypoint waits for Postgres before starting.
+      GALEQEA_DATABASE_URL: ${GALEQEA_DATABASE_URL:-}
+      GALEQEA_STORAGE_BACKEND: ${GALEQEA_STORAGE_BACKEND:-local}
+      GALEQEA_S3_ENDPOINT: ${GALEQEA_S3_ENDPOINT:-}
+      GALEQEA_S3_BUCKET: ${GALEQEA_S3_BUCKET:-}
+      GALEQEA_S3_REGION: ${GALEQEA_S3_REGION:-us-east-1}
+      GALEQEA_S3_ACCESS_KEY_ID: ${GALEQEA_S3_ACCESS_KEY_ID:-}
+      GALEQEA_S3_SECRET_ACCESS_KEY: ${GALEQEA_S3_SECRET_ACCESS_KEY:-}
+      GALEQEA_S3_FORCE_PATH_STYLE: ${GALEQEA_S3_FORCE_PATH_STYLE:-false}
+      GALEQEA_REDIS_URL: ${GALEQEA_REDIS_URL:-}
+      # Model configuration is optional. GaleQEA runs fully offline without it.
       # GALEQEA_AI_MODE: api_key
       # GALEQEA_PROVIDER: anthropic
       # GALEQEA_MODEL: claude-opus-5
@@ -27,30 +56,110 @@ services:
       # GALEQEA_PROVIDER: ollama
       # GALEQEA_BASE_URL: http://host.docker.internal:11434/v1
       # GALEQEA_MODEL: llama3.1
-      #
-      # DATABASE_URL for the postgres profile below:
-      # GALEQEA_DATABASE_URL: postgresql+psycopg://galeqea:galeqea@postgres:5432/galeqea
     restart: unless-stopped
     # Chromium needs more shared memory than Docker's 64MB default; without
     # this, browsers crash intermittently under parallel execution.
     shm_size: 1gb
 
-  # Optional. Enable with:  docker compose --profile postgres up
+  # ---- full profile: Postgres 16 with pgvector -----------------------------
+  # Enabled by deploy/compose/full.env (COMPOSE_PROFILES=full).
   postgres:
-    image: pgvector/pgvector:pg16
-    profiles: ["postgres"]
+    image: pgvector/pgvector:pg16       # PostgreSQL License (permissive)
+    profiles: ["full"]
     environment:
       POSTGRES_USER: galeqea
       POSTGRES_PASSWORD: galeqea
       POSTGRES_DB: galeqea
     volumes:
       - galeqea-pg:/var/lib/postgresql/data
+    # An *authenticated* TCP query, not just pg_isready: during initdb the
+    # bootstrap server answers pg_isready before the role's password works over
+    # TCP, so pg_isready would report "healthy" too early and anything depending
+    # on it would connect and fail. This only passes once real logins succeed.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U galeqea"]
+      test: ["CMD-SHELL", "PGPASSWORD=galeqea psql -h 127.0.0.1 -U galeqea -d galeqea -c 'select 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ---- full profile: S3-compatible object storage --------------------------
+  # SeaweedFS is Apache-2.0 (unlike MinIO/AGPL and Garage/AGPL). One process runs
+  # the master, a volume server, the filer and the S3 gateway; the gateway speaks
+  # the S3 API on :8333 with the identity in deploy/compose/seaweedfs/s3.json.
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.80     # Apache-2.0
+    profiles: ["full"]
+    command: ["server", "-dir=/data", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-s3.port=8333"]
+    volumes:
+      - galeqea-s3:/data
+      - ./deploy/compose/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    # The S3 gateway is up as soon as it answers HTTP at all: an anonymous request
+    # gets a 403 (auth enforced), which still proves the port is serving. Grep for
+    # any HTTP status line so a 403 counts as healthy and only a dead port fails.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -S -O /dev/null http://127.0.0.1:8333/ 2>&1 | grep -qE 'HTTP/[0-9.]+ [0-9]+'"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+
+  # ---- full profile: worker ------------------------------------------------
+  # The durable job queue (ProcrastinateQueue on Postgres, MIT): runs, retention,
+  # PDF renders and webhook deliveries are consumed here with LISTEN/NOTIFY +
+  # SKIP LOCKED. Scale it with `docker compose up --scale worker=N`. Its run events
+  # bridge back to the web process (SSE/webhooks/metrics stay live).
+  worker:
+    image: galeqea:local
+    build: .
+    profiles: ["full"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GALEQEA_HOME: /data
+      GALEQEA_DATABASE_URL: ${GALEQEA_DATABASE_URL:-}
+      GALEQEA_STORAGE_BACKEND: ${GALEQEA_STORAGE_BACKEND:-local}
+      GALEQEA_S3_ENDPOINT: ${GALEQEA_S3_ENDPOINT:-}
+      GALEQEA_S3_BUCKET: ${GALEQEA_S3_BUCKET:-}
+      GALEQEA_S3_ACCESS_KEY_ID: ${GALEQEA_S3_ACCESS_KEY_ID:-}
+      GALEQEA_S3_SECRET_ACCESS_KEY: ${GALEQEA_S3_SECRET_ACCESS_KEY:-}
+    volumes:
+      - galeqea-data:/data
+    # The entrypoint waits for Postgres, then this runs the durable worker.
+    command: ["galeqea", "worker"]
+    # The worker doesn't serve :8080, so the image's HTTP healthcheck doesn't apply;
+    # its liveness is that it stays attached to the Postgres queue.
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  # ---- full profile: Valkey (optional cache/queue backend) -----------------
+  # Valkey is the BSD-3 fork of Redis (Redis 8 is AGPL and must not be bundled).
+  # Optional: the app runs without it today; Phase 2 can use it for the queue.
+  valkey:
+    image: valkey/valkey:8-alpine       # BSD-3-Clause
+    profiles: ["full"]
+    command: ["valkey-server", "--save", "60", "1"]
+    volumes:
+      - galeqea-valkey:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---- full profile: bundled demo app (static) -----------------------------
+  # Serves examples/demo-app so a golden-path run has an in-network target to test.
+  demo:
+    image: nginx:alpine
+    profiles: ["full"]
+    volumes:
+      - ./examples/demo-app:/usr/share/nginx/html:ro
+    # No published port needed: the worker reaches it as http://demo inside the net.
 
 volumes:
   galeqea-data:
   galeqea-pg:
+  galeqea-s3:
+  galeqea-valkey:

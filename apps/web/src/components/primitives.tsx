@@ -42,7 +42,7 @@ export function Button({
   // The primary action is monochrome - light ground, dark text. It reads as
   // emphasis without spending a colour that status already owns.
   const variants = {
-    primary: 'bg-ink text-canvas hover:bg-white border-transparent font-semibold',
+    primary: 'bg-ink text-canvas hover:opacity-90 border-transparent font-semibold',
     ghost: 'bg-surface-2 text-ink-2 hover:text-ink hover:bg-surface-3 border-line hover:border-line-strong',
     subtle: 'bg-transparent text-ink-3 hover:text-ink hover:bg-surface-2 border-transparent',
     danger: 'bg-transparent text-fail hover:bg-fail/10 border-fail/30',
@@ -71,8 +71,10 @@ export function SectionTitle({ children, hint, action }: { children: ReactNode; 
   return (
     <div className="flex items-baseline justify-between gap-4 px-4 pt-3.5 pb-2">
       <div className="flex min-w-0 items-baseline gap-2.5">
-        <h2 className="truncate text-[13px] font-semibold tracking-tight text-ink">{children}</h2>
-        {hint && <span className="truncate text-[11px] text-ink-3">{hint}</span>}
+        {/* The title never shrinks, same rule as the action button below: a
+            clipped hint is an acceptable loss, a clipped title is not. */}
+        <h2 className="shrink-0 text-[13px] font-semibold tracking-tight text-ink">{children}</h2>
+        {hint && <span className="min-w-0 truncate text-[11px] text-ink-3">{hint}</span>}
       </div>
       {/* The action never shrinks: a clipped "Approve" is worse than a clipped title. */}
       {action && <div className="shrink-0">{action}</div>}

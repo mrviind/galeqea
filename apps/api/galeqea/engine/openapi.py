@@ -419,7 +419,7 @@ def generate(
             expect["expect_content_type"] = "json"
         proposals.append(_proposal(
             op,
-            title=f"{op.label} — contract: valid request returns {success} and a conforming body",
+            title=f"{op.label}: contract, a valid request returns {success} and a conforming body",
             technique="contract conformance",
             rationale=(
                 f"{op.summary or 'The operation'} must honour its own specification. "
@@ -427,7 +427,7 @@ def generate(
                    "or retyped field fails here rather than in a consumer."
                    if schema else
                    "The specification declares no JSON response schema, so only the status "
-                   "code can be asserted — worth fixing in the spec.")
+                   "code can be asserted, which is worth fixing in the spec.")
             ),
             steps=[_api_step(
                 op,
@@ -449,7 +449,7 @@ def generate(
             reduced = {k: v for k, v in values.items() if k != param.name}
             proposals.append(_proposal(
                 op,
-                title=f"{op.label} — rejects a request missing required '{param.name}'",
+                title=f"{op.label}: rejects a request missing required '{param.name}'",
                 technique="equivalence partitioning",
                 rationale=(
                     f"'{param.name}' is declared required. Omitting it must produce a client "
@@ -480,7 +480,7 @@ def generate(
             reduced = {k: v for k, v in body.items() if k != name}
             proposals.append(_proposal(
                 op,
-                title=f"{op.label} — rejects a body missing required '{name}'",
+                title=f"{op.label}: rejects a body missing required '{name}'",
                 technique="equivalence partitioning",
                 rationale=(
                     f"'{name}' is required by the request schema. Omitting it must produce a "
@@ -513,7 +513,7 @@ def generate(
                 continue
             proposals.append(_proposal(
                 op,
-                title=f"{op.label} — rejects body field '{name}' = {_short(bad.value)}",
+                title=f"{op.label}: rejects body field '{name}' = {_short(bad.value)}",
                 technique=bad.technique,
                 rationale=f"{bad.why.capitalize()}. The API must reject it rather than store it.",
                 steps=[_api_step(
@@ -540,7 +540,7 @@ def generate(
                 mutated = {**values, param.name: bad.value}
                 proposals.append(_proposal(
                     op,
-                    title=f"{op.label} — rejects '{param.name}' = {_short(bad.value)}",
+                    title=f"{op.label}: rejects '{param.name}' = {_short(bad.value)}",
                     technique=bad.technique,
                     rationale=f"{bad.why.capitalize()}. The API must reject it rather than coerce it.",
                     steps=[_api_step(
@@ -560,11 +560,11 @@ def generate(
         if op.secured:
             proposals.append(_proposal(
                 op,
-                title=f"{op.label} — rejects an unauthenticated request",
+                title=f"{op.label}: rejects an unauthenticated request",
                 technique="security",
                 rationale=(
                     "The operation declares a security requirement. Without credentials it "
-                    "must answer 401 or 403 — never 200, and never a 500 that leaks a stack "
+                    "must answer 401 or 403, never 200, and never a 500 that leaks a stack "
                     "trace."
                 ),
                 steps=[_api_step(
@@ -597,7 +597,7 @@ def generate(
                     steps.append(_api_step(
                         op,
                         intent=f"Send {_short(probe)} as '{target}'",
-                        expected=f"a 4xx, or a 2xx with the value stored safely — {why}",
+                        expected=f"a 4xx, or a 2xx with the value stored safely: {why}",
                         url=_url(op, mutated),
                         headers=_headers(op, mutated, authenticated=True),
                         body=probe_body,
@@ -610,7 +610,7 @@ def generate(
                     ))
                 proposals.append(_proposal(
                     op,
-                    title=f"{op.label} — handles hostile input in '{target}' safely",
+                    title=f"{op.label}: handles hostile input in '{target}' safely",
                     technique="security",
                     rationale=(
                         "Untrusted values must be handled, not crashed on: a 5xx means the "
@@ -619,7 +619,7 @@ def generate(
                            "unescaped in the response."
                            if op.renders_html() else
                            "This operation returns JSON, where echoing the stored value back "
-                           "is correct behaviour, so reflection is not asserted — check how a "
+                           "is correct behaviour, so reflection is not asserted; check how a "
                            "consumer renders it.")
                     ),
                     steps=steps, priority="high", risk="high", extra_tags=["negative", "security"],

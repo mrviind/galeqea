@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { ArrowRight, Check, Loader2, ShieldAlert, TriangleAlert, X, Zap } from 'lucide-react';
 import type { ChatMessage } from '../../lib/api';
-import { clock } from '../../lib/format';
+import { chatStamp, clock } from '../../lib/format';
+import { renderMarkdown } from '../../lib/markdown';
 import { Blocks } from '../Blocks';
 import { GaleQEALogo } from '../ui/GaleQEALogo';
 
@@ -15,7 +17,7 @@ import { GaleQEALogo } from '../ui/GaleQEALogo';
  *  - **Live status.** The orchestrator publishes timestamped progress over the
  *    event bus while it routes, calls tools and waits on approvals. Showing that
  *    is the difference between "it's working" and "it's hung".
- *  - **Blocks.** A reply can carry structured cards — an approval request, a run
+ *  - **Blocks.** A reply can carry structured cards: an approval request, a run
  *    summary, a coverage table. They render as themselves, not as pasted JSON.
  */
 /** One tool invocation, from the moment it starts to the moment it resolves. */
@@ -63,17 +65,18 @@ export function MessageList({
   }, [messages, draft, status, tools, busy]);
 
   return (
-    <div ref={scroller} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3.5">
+    <div ref={scroller} tabIndex={0} role="log" aria-label="Conversation" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3.5 focus-visible:outline-none">
       {messages.length === 0 && !busy && (
         <div className="space-y-3 pt-2">
           <div className="space-y-1.5">
             <GaleQEALogo size="lg" showText={false} />
             <h2 className="pt-1.5 text-[14px] font-semibold tracking-tight text-ink">
-              Drive quality from here.
+              Tell the agent what to test.
             </h2>
             <p className="text-[11.5px] leading-relaxed text-ink-3">
-              Most commands resolve with no model at all — instantly, offline, and
-              predictably. Anything that changes state is queued for your approval first.
+              In plain English, it explores, plans and builds the tests on your model,
+              then re-runs, heals and reports without one, so re-runs cost nothing.
+              Anything that changes state waits for your approval.
             </p>
           </div>
           <div className="space-y-1">
@@ -88,6 +91,11 @@ export function MessageList({
               </button>
             ))}
           </div>
+          <p className="pt-1 text-[11px] leading-relaxed text-ink-3">
+            No model connected? Everything above still runs deterministically. To let it
+            explore, plan and reason, <Link to="/settings" className="text-accent hover:underline">connect a model</Link>.
+            You're billed to build, never to re-run.
+          </p>
         </div>
       )}
 
@@ -103,11 +111,11 @@ export function MessageList({
       {draft && (
         <article className="space-y-1.5" aria-live="polite">
           <header className="flex items-baseline gap-2">
-            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-accent">Copilot</span>
+            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-accent">QE Agent</span>
             <span className="text-[10px] text-ink-3">streaming</span>
           </header>
-          <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink">
-            {draft}
+          <div className="chat-md text-[12.5px] leading-relaxed text-ink">
+            <span dangerouslySetInnerHTML={{ __html: renderMarkdown(draft) }} />
             <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-accent align-middle" aria-hidden="true" />
           </div>
         </article>
@@ -152,21 +160,21 @@ function Message({ message, nextSteps, onSuggest }: {
       <header className="flex items-baseline gap-2">
         <span className={clsx('text-[10.5px] font-semibold uppercase tracking-wide',
           isUser ? 'text-ink-3' : 'text-accent')}>
-          {isUser ? 'You' : 'Copilot'}
+          {isUser ? 'You' : 'QE Agent'}
         </span>
-        {message.at && <span className="mono text-[10px] text-ink-3">{clock(message.at)}</span>}
+        {message.at && <span className="mono text-[10px] text-ink-3">{chatStamp(message.at)}</span>}
       </header>
 
-      <div
-        className={clsx(
-          'whitespace-pre-wrap text-[12.5px] leading-relaxed',
-          isUser
-            ? 'rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-ink-2'
-            : 'text-ink',
-        )}
-      >
-        {message.content}
-      </div>
+      {isUser ? (
+        <div className="whitespace-pre-wrap rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-[12.5px] leading-relaxed text-ink-2">
+          {message.content}
+        </div>
+      ) : (
+        <div
+          className="chat-md text-[12.5px] leading-relaxed text-ink"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+        />
+      )}
 
       {/* Warnings are rendered above the blocks: if a message was flagged for
           prompt injection, that has to be read before its contents are acted on. */}
@@ -209,7 +217,7 @@ function Message({ message, nextSteps, onSuggest }: {
  *
  * The row states three things the user actually needs while waiting: which tool
  * is running, whether it only reads (so nothing is changing under them), and
- * whether it is going to need their approval — which is the difference between
+ * whether it is going to need their approval, which is the difference between
  * "wait a moment" and "you are about to be asked something".
  *
  * Cyan is GaleQEA's `review` token rather than a raw palette value, so tool

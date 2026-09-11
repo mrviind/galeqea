@@ -76,11 +76,18 @@ export default function Command() {
 
       <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[1.15fr_1fr]">
         {/* --- live theatre --------------------------------------------- */}
-        <Panel glow={Boolean(liveRun)} className="flex min-h-[380px] flex-col overflow-hidden">
+        {/* min-w-0 on both tracks: without it, a run row's unbreakable text
+            (a long URL, a long title) sets this column's min-content width,
+            which a "fr" track honors *before* distributing the 1.15fr/1fr
+            ratio - so the log panel was rendering at ~60px while this one
+            claimed the rest. min-w-0 caps that contribution at zero and lets
+            the ratio actually apply; each column's own children still wrap
+            or truncate to fit. */}
+        <Panel glow={Boolean(liveRun)} className="flex min-h-[380px] min-w-0 flex-col overflow-hidden">
           <LiveLog runId={undefined} className="flex-1" />
         </Panel>
 
-        <div className="flex min-h-0 flex-col gap-3">
+        <div className="flex min-h-0 min-w-0 flex-col gap-3">
           {/* --- run history ------------------------------------------- */}
           <Panel className="overflow-hidden">
             <SectionTitle
@@ -95,7 +102,7 @@ export default function Command() {
                   <button
                     key={t.id}
                     onClick={() => navigate(`/runs/${t.id}`)}
-                    title={`Run #${t.number} — ${pct(t.value)} passed`}
+                    title={`Run #${t.number}: ${pct(t.value)} passed`}
                     className="group relative w-full max-w-[26px] flex-1 transition-all hover:opacity-100"
                     style={{ height: `${Math.max(12, t.value * 100)}%` }}
                   >
@@ -200,7 +207,7 @@ function Metric({
         {icon}
         <span className="text-[11px]">{label}</span>
       </div>
-      <p className="mt-1.5 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
+      <p className="mt-1.5 text-3xl font-bold tracking-tight tabular-nums">{value}</p>
       <div className="mt-2 h-1.5">
         {meter !== undefined && <Meter value={meter} tone={tone} />}
       </div>
@@ -258,7 +265,7 @@ function HandoffBanner({ handoff, onResolved }: { handoff: any; onResolved: () =
         </p>
       </div>
       <Button variant="primary" onClick={resume} disabled={busy}>
-        {busy ? 'Resuming…' : 'I’ve handled it — resume'}
+        {busy ? 'Resuming…' : 'I’ve handled it, resume'}
       </Button>
     </Panel>
   );

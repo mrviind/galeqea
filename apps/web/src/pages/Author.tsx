@@ -8,12 +8,13 @@ import { api } from '../lib/api';
 import { relative } from '../lib/format';
 import { useApp } from '../state';
 import { Button, Chip, Empty, Panel, SectionTitle, Spinner } from '../components/primitives';
+import { ImportPanel } from '../components/ImportPanel';
 
 /**
  * Two ways to author tests without writing any: drive the browser and let
  * GaleQEA watch, or hand it an API specification.
  *
- * Both land in the same place — a PROPOSED test case waiting for review. That
+ * Both land in the same place: a PROPOSED test case waiting for review. That
  * is deliberate and it is shown on screen: having recorded a session is not the
  * same as having approved the test it produced.
  */
@@ -103,7 +104,7 @@ function Recorder() {
     setBusy(true);
     try {
       const result = await api.post<any>(`/api/projects/${project.id}/recordings/${id}/promote`);
-      setNotice(`Filed ${result.test.key} — ${result.test.steps} steps, awaiting review in Approvals.`);
+      setNotice(`Filed ${result.test.key}: ${result.test.steps} steps, awaiting review in Approvals.`);
       await load();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'could not promote');
@@ -118,7 +119,7 @@ function Recorder() {
           <div className="space-y-3 px-4 pb-4">
             <label className="block">
               <span className="mb-1.5 block text-[11px] text-ink-3">
-                Start URL <span className="text-ink-3/60">— defaults to the project environment</span>
+                Start URL <span className="text-ink-3/60">(defaults to the project environment)</span>
               </span>
               <input
                 value={startUrl}
@@ -137,6 +138,8 @@ function Recorder() {
             </p>
           </div>
         </Panel>
+
+        <ImportPanel />
 
         <Panel>
           <SectionTitle hint={`${sessions.length}`}>Sessions</SectionTitle>
@@ -239,7 +242,7 @@ function SessionDetail({ session, onStop, onPromote, busy }: {
         <div className="flex items-center gap-3 border-t border-line px-4 py-8">
           <span className="dot h-2 w-2 bg-fail pulse-dot" />
           <div>
-            <p className="text-[13px] text-ink">Recording — {session.live_actions ?? 0} interactions captured</p>
+            <p className="text-[13px] text-ink">Recording: {session.live_actions ?? 0} interactions captured</p>
             <p className="text-[11px] text-ink-3">
               Close the browser window when you are finished, or press Stop. The step list is
               compiled once the session ends.
@@ -351,7 +354,7 @@ function SpecImport() {
       setAnalysis(result);
       if (path === 'import') {
         setNotice(result.unchanged
-          ? 'This specification was already imported — nothing was created a second time.'
+          ? 'This specification was already imported. Nothing was created a second time.'
           : `Filed ${result.created.length} test case(s) for review.`);
       }
     } catch (err) {
@@ -389,7 +392,7 @@ function SpecImport() {
           </div>
           <p className="text-[11px] leading-relaxed text-ink-3">
             Analysing writes nothing. Contract, boundary, authentication and hostile-input cases
-            are derived from the schema by rule — no model is used, and none is needed.
+            are derived from the schema by rule. No model is used, and none is needed.
           </p>
         </div>
       </Panel>
@@ -442,8 +445,8 @@ function SpecImport() {
               {analysis.base_url ? (
                 <p className="border-t border-line px-4 py-2.5 text-[11px] text-ink-3">
                   Tests will run against <span className="mono text-ink-2">{analysis.base_url}</span>
-                  {' '}— the project environment, not the <span className="mono">servers</span> entry
-                  in the specification.
+                  {' '}(the project environment, not the <span className="mono">servers</span> entry
+                  in the specification).
                 </p>
               ) : (
                 <p className="border-t border-line px-4 py-2.5 text-[11px] text-flaky">
@@ -478,7 +481,7 @@ function SpecImport() {
                   {analysis.injection_scan.findings.slice(0, 5).map((f: any, i: number) => (
                     <li key={i} className="flex gap-2 text-[11.5px] leading-relaxed text-ink-2">
                       <ShieldAlert size={13} className="mt-0.5 shrink-0 text-fail" />
-                      <span><b>{f.kind}</b> — <span className="mono text-ink-3">{f.excerpt}</span></span>
+                      <span><b>{f.kind}</b>: <span className="mono text-ink-3">{f.excerpt}</span></span>
                     </li>
                   ))}
                 </ul>

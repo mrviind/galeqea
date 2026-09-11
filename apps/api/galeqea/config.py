@@ -1,8 +1,9 @@
 """Runtime configuration.
 
-GaleQEA is local-first: every setting has a working default that requires no
-cloud service, no API key and no outbound network access. The platform boots
-in ``NO_AI`` mode unless a model provider is explicitly configured.
+GaleQEA is model-agnostic and safe by default: every setting has a working
+default that requires no cloud service, no API key and no outbound network
+access. The platform boots in ``NO_AI`` mode until a model provider is
+explicitly configured, then runs on whichever one you point it at.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,11 +59,38 @@ class Settings(BaseSettings):
     secret_key: str = ""
     vault_key: str = ""
     jwt_ttl_minutes: int = 60 * 12
+    # Force the Secure flag on session cookies even on a plain-HTTP request. Set
+    # this true behind a TLS-terminating proxy that talks HTTP to the app.
+    session_cookie_secure: bool = False
     # Single-user desktop installs skip login; server deployments must not.
     single_user_mode: bool = True
 
+    # --- OIDC single sign-on (optional) ------------------------------------
+    # Set issuer + client id/secret to turn on "Sign in with SSO". Works with any
+    # OpenID Connect provider (Keycloak, Okta, Entra, Authentik, Google…).
+    auth_oidc_issuer: str = ""          # e.g. https://keycloak.example/realms/galeqea
+    auth_oidc_client_id: str = ""
+    auth_oidc_client_secret: str = ""
+    auth_oidc_scopes: str = "openid email profile"
+    auth_oidc_groups_claim: str = "groups"     # claim holding the user's groups/roles
+    auth_oidc_role_map: dict = {}       # {"galeqea-admins": "admin", …} → GaleQEA role
+    auth_oidc_default_role: str = "author"     # role for a JIT user with no mapped group
+    auth_oidc_redirect_base: str = ""   # public base URL for the callback (proxy override)
+
     # --- database ----------------------------------------------------------
     database_url: str = ""
+
+    # --- artifact storage --------------------------------------------------
+    # "local" (disk under GALEQEA_HOME) or "s3" (any S3-compatible endpoint).
+    storage_backend: str = "local"
+    s3_endpoint: str = ""            # empty → AWS default; set for SeaweedFS/R2/Ceph/MinIO
+    s3_bucket: str = ""
+    s3_region: str = "us-east-1"
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_force_path_style: bool = False  # required by most non-AWS endpoints
+    # Presigned-URL lifetime when the API hands a browser a direct S3 link.
+    s3_url_ttl_seconds: int = 3600
 
     # --- ai ----------------------------------------------------------------
     ai_mode: AIMode = AIMode.NO_AI
@@ -85,11 +114,49 @@ class Settings(BaseSettings):
     runner_command: str = "node"
     runner_entry: str = ""
     max_parallel_runs: int = 4
+    # --- job queue ---------------------------------------------------------
+    # "auto" = in-process (asyncio) on SQLite, durable Postgres queue on Postgres.
+    # Force with "inprocess" | "procrastinate". The zero-config SQLite install never
+    # needs an external broker; the in-process queue IS the event loop.
+    queue_backend: str = "auto"        # auto | inprocess | procrastinate
+    worker_concurrency: int = 4
     default_browser: str = "chromium"
     default_timeout_ms: int = 30_000
 
+    # --- logging / audit streaming -----------------------------------------
+    # "auto" renders human-readable console logs on a TTY and JSON everywhere else
+    # (containers, CI); "json"/"console" force one. Every line carries the request id.
+    log_format: str = "auto"           # auto | json | console
+    log_level: str = "INFO"
+    # Mirror every audit-ledger entry as a JSON line on stdout for a SIEM collector.
+    audit_siem: bool = False
+    # OpenTelemetry tracing (needs apps/api[otel] + OTEL_EXPORTER_OTLP_ENDPOINT).
+    otel_enabled: bool = False
+
+    # --- demo / default testing target -------------------------------------
+    # The site the product tests out of the box: "test" with no URL, a new project's
+    # first run, or the demo button all point here. Any URL (including a localhost
+    # app) overrides it per request.
+    demo_target_url: str = "https://www.aravindarumugam.com"
+    demo_page_budget: int = 6          # pages to analyse for the demo floor (5-7)
+
     # --- telemetry ---------------------------------------------------------
     telemetry_enabled: bool = False  # off by default, forever
+
+    @field_validator(
+        "s3_force_path_style", "web_research_enabled", "allow_ai_self_approval",
+        "telemetry_enabled", "session_cookie_secure", "audit_siem", "otel_enabled",
+        mode="before",
+    )
+    @classmethod
+    def _blank_bool_is_false(cls, v):
+        # Compose/env commonly pass an unset variable through as an empty string
+        # (``FOO: ${FOO:-}``). For a bool that is a crash (pydantic can't parse
+        # ""), so treat a blank string as the field default (all of these default
+        # to False). The zero-config path must never fail to boot on an empty env.
+        if isinstance(v, str) and v.strip() == "":
+            return False
+        return v
 
     def model_post_init(self, __context) -> None:  # noqa: D105
         self.home = Path(self.home).expanduser()
@@ -116,6 +183,22 @@ class Settings(BaseSettings):
     @property
     def ai_enabled(self) -> bool:
         return self.ai_mode != AIMode.NO_AI and self.provider != "none"
+
+    @property
+    def is_postgres(self) -> bool:
+        return self.database_url.startswith(("postgres://", "postgresql", "postgresql+"))
+
+    @property
+    def queue_kind(self) -> str:
+        """Resolve the effective queue backend ('inprocess' | 'procrastinate')."""
+        if self.queue_backend in ("inprocess", "procrastinate"):
+            return self.queue_backend
+        return "procrastinate" if self.is_postgres else "inprocess"
+
+    @property
+    def oidc_enabled(self) -> bool:
+        return bool(self.auth_oidc_issuer and self.auth_oidc_client_id
+                    and self.auth_oidc_client_secret)
 
 
 def _persisted_secret(path: Path) -> str:

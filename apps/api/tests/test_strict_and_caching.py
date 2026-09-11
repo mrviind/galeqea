@@ -78,8 +78,8 @@ def test_strict_is_set_exactly_where_the_schema_allows():
     # review_test accepts an arbitrary proposal object. Closing any of those would
     # change what the tool accepts, so they validate locally instead.
     # (The per-tool strict check at the top of this test already asserts, via
-    # is_strictable, that every tool is marked correctly — including new free-form
-    # tools — so no hard-coded name set is maintained here.)
+    # is_strictable, that every tool is marked correctly, including new free-form
+    # tools, so no hard-coded name set is maintained here.)
 
 
 def test_the_last_tool_carries_the_cache_breakpoint_and_only_the_last():

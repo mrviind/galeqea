@@ -40,6 +40,17 @@ class EventBus:
         self._subscribers: dict[str, set[asyncio.Queue]] = defaultdict(set)
         self._history: dict[str, deque[Event]] = defaultdict(lambda: deque(maxlen=RING_SIZE))
         self._lock = asyncio.Lock()
+        # Out-of-band listeners (e.g. outbound webhooks). Unlike the per-project
+        # queues, a sink is a coroutine fired-and-forgotten so a slow external
+        # endpoint can never block the run that emitted the event.
+        self._sinks: list = []
+
+    def add_sink(self, sink) -> None:
+        """Register an ``async def sink(event)`` called on every publish. A sink
+        owns its own errors: an exception in one never affects the stream or
+        another sink."""
+        if sink not in self._sinks:
+            self._sinks.append(sink)
 
     async def publish(self, event: Event) -> None:
         self._history[event.project_id].append(event)
@@ -47,6 +58,9 @@ class EventBus:
             # A stalled browser tab must never block the test runner.
             with contextlib.suppress(asyncio.QueueFull):
                 queue.put_nowait(event)
+        for sink in self._sinks:
+            with contextlib.suppress(RuntimeError):  # no running loop in some sync tests
+                asyncio.create_task(_safe_sink(sink, event))
 
     def publish_soon(self, event: Event) -> None:
         """Publish from synchronous code (the runner supervisor, appliers)."""
@@ -75,6 +89,11 @@ class EventBus:
 
     def subscriber_count(self, project_id: str) -> int:
         return len(self._subscribers.get(project_id, ()))
+
+
+async def _safe_sink(sink, event: Event) -> None:
+    with contextlib.suppress(Exception):  # a sink's failure is the sink's problem
+        await sink(event)
 
 
 bus = EventBus()
@@ -108,6 +127,9 @@ class Ev:
 
     APPROVAL_REQUESTED = "approval.requested"
     APPROVAL_DECIDED = "approval.decided"
+
+    MILESTONE_SIGNED_OFF = "milestone.signed_off"
+    CYCLE_FINISHED = "cycle.finished"
 
     HEAL_PROPOSED = "heal.proposed"
     RCA_READY = "rca.ready"

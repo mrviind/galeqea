@@ -1,0 +1,56 @@
+name: Security
+
+on:
+  push: { branches: [main] }
+  pull_request:
+  schedule:
+    - cron: "27 6 * * 1"   # weekly, so new CVEs surface without a push
+
+permissions:
+  contents: read
+
+jobs:
+  deps-python:
+    name: pip-audit · Python dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -e "apps/api[postgres,s3,otel]" pip-audit
+      - run: pip-audit --strict --desc
+
+  deps-osv:
+    name: osv-scanner · lockfiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google/osv-scanner-action/osv-scanner-action@v1.9.2
+        with:
+          scan-args: |-
+            --recursive
+            ./
+
+  image-grype:
+    name: grype · container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t galeqea:scan .
+      - name: Scan for vulnerabilities (fail on high+)
+        uses: anchore/scan-action@v5
+        with:
+          image: galeqea:scan
+          severity-cutoff: high
+          fail-build: true
+
+  secrets-gitleaks:
+    name: gitleaks · secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"

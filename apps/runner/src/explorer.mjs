@@ -3,12 +3,13 @@
  *
  * The runner observes and acts; the supervisor decides. Each iteration reports
  * what the page looks like and asks for one action, exactly as healing asks for
- * one locator. That keeps every policy question — which strategy, which model,
- * what counts as destructive — on the server, and leaves the browser process
+ * one locator. That keeps every policy question (which strategy, which model,
+ * what counts as destructive) on the server, and leaves the browser process
  * with no knowledge of any of it.
  */
 
 import { emit, log, ask } from './protocol.mjs';
+import { trimAriaSnapshot } from './pagestate.mjs';
 
 const INTERACTIVE = [
   'a[href]', 'button', 'input:not([type=hidden])', 'select', 'textarea',
@@ -72,10 +73,15 @@ async function observe(page) {
     return out;
   }, INTERACTIVE);
 
-  let ariaSnapshot = '';
+  let ariaRaw = '';
   try {
-    ariaSnapshot = await page.locator('body').ariaSnapshot();
-  } catch { /* older engines */ }
+    ariaRaw = await page.locator('body').ariaSnapshot({ mode: 'ai' });
+  } catch {
+    try { ariaRaw = await page.locator('body').ariaSnapshot(); } catch { /* older engines */ }
+  }
+  // Budgeted, ref-handled state for the model (WO#8-A); the full tree goes to disk.
+  const state = trimAriaSnapshot(ariaRaw);
+  const ariaSnapshot = state.text;
 
   const a11y = await page.evaluate(() => {
     const issues = [];
@@ -95,7 +101,8 @@ async function observe(page) {
     return issues.slice(0, 10);
   });
 
-  return { url: page.url(), title: await page.title(), candidates, ariaSnapshot, a11y };
+  return { url: page.url(), title: await page.title(), candidates, ariaSnapshot,
+           state_tokens: state.stateTokens, a11y };
 }
 
 /** Turn a candidate description back into something clickable. */

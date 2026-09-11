@@ -13,7 +13,7 @@ from galeqea.mcp.qe_tools import (
 
 
 # --------------------------------------------------------------------------- #
-# Criterion parsing — the failures that shipped in the first version
+# Criterion parsing: the failures that shipped in the first version
 # --------------------------------------------------------------------------- #
 def test_a_when_comma_criterion_splits_at_the_comma_not_the_first_space():
     when, then, derived = _split_criterion(

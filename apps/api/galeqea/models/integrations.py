@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import Boolean, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -31,6 +31,68 @@ class IntegrationConnection(Base, IdMixin, TimestampMixin):
     # re-authenticate on every call.
     token_cache: Mapped[dict] = mapped_column(JSONish, default=dict)
     created_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class JiraIssueMap(Base, IdMixin, TimestampMixin):
+    """A Jira story imported as a requirement. Keeps the source anchor so re-imports
+    are idempotent and a description change can mark the linked tests stale."""
+
+    __tablename__ = "jira_issue_maps"
+    __table_args__ = (
+        UniqueConstraint("project_id", "issue_id", name="uq_jira_issue_map"),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(40), index=True)
+    issue_id: Mapped[str] = mapped_column(String(64), index=True)
+    issue_key: Mapped[str] = mapped_column(String(64), index=True)
+    #: The RequirementItem.ref this story became (the key itself).
+    requirement_ref: Mapped[str] = mapped_column(String(64), default="")
+    #: Hash of the imported description, so a later change is detectable.
+    description_hash: Mapped[str] = mapped_column(String(64), default="")
+    remote_updated: Mapped[str] = mapped_column(String(40), default="")
+    stale: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Whether coverage (a "Test" link/comment) has been written back to the story.
+    coverage_written: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+
+class RunExport(Base, IdMixin, TimestampMixin):
+    """A run's results pushed to an external test-management system. The
+    ``idempotency_key`` makes a re-push of the same run to the same target a no-op
+    that returns the stored execution key instead of creating a duplicate."""
+
+    __tablename__ = "run_exports"
+    __table_args__ = (
+        UniqueConstraint("run_id", "provider", "idempotency_key", name="uq_run_export"),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(40), index=True)
+    run_id: Mapped[str] = mapped_column(String(40), index=True)
+    provider: Mapped[str] = mapped_column(String(24), index=True)  # xray|zephyr_scale|testrail
+    target: Mapped[str] = mapped_column(String(120), default="")   # plan/cycle/run key
+    idempotency_key: Mapped[str] = mapped_column(String(64), default="")
+    exec_key: Mapped[str] = mapped_column(String(120), default="")
+    url: Mapped[str] = mapped_column(String(600), default="")
+    pushed: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="pushed")
+
+
+class ReportPage(Base, IdMixin, TimestampMixin):
+    """A published Confluence page for a release report. Kept so a re-publish updates
+    the same page in place (version+1) instead of creating a new one each time."""
+
+    __tablename__ = "report_pages"
+    __table_args__ = (
+        UniqueConstraint("project_id", "milestone_id", "space_key", name="uq_report_page"),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(40), index=True)
+    milestone_id: Mapped[str] = mapped_column(String(40), index=True)
+    space_key: Mapped[str] = mapped_column(String(64), default="")
+    page_id: Mapped[str] = mapped_column(String(64), default="")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    url: Mapped[str] = mapped_column(String(600), default="")
 
 
 class PluginRecord(Base, IdMixin, TimestampMixin):

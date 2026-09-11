@@ -74,6 +74,11 @@ def list_tools() -> list[dict]:
 
 def list_resources(project_id: str) -> list[dict]:
     return [
+        {"uri": f"galeqea://{project_id}/context",
+         "name": "Project context",
+         "description": "Read this first: a one-page briefing on the project's live state, "
+                        "the reports available, and the tools you can call.",
+         "mimeType": "text/markdown"},
         {"uri": f"galeqea://{project_id}/tests",
          "name": "Test cases",
          "description": "Every test case with category, status, steps and traceability.",
@@ -101,6 +106,30 @@ def list_resources(project_id: str) -> list[dict]:
         {"uri": f"galeqea://{project_id}/app-model",
          "name": "App Model",
          "description": "The discovered screen and element graph of the application under test.",
+         "mimeType": "application/json"},
+        {"uri": f"galeqea://{project_id}/traceability",
+         "name": "Traceability report",
+         "description": "Requirements mapped to the tests that cover them, with gaps.",
+         "mimeType": "application/json"},
+        {"uri": f"galeqea://{project_id}/heals",
+         "name": "Heals report",
+         "description": "Every locator heal proposed or applied, with strategy and evidence.",
+         "mimeType": "application/json"},
+        {"uri": f"galeqea://{project_id}/audit",
+         "name": "Audit ledger",
+         "description": "The hash-chained record of every consequential action.",
+         "mimeType": "application/json"},
+        {"uri": f"galeqea://{project_id}/runs/latest/report",
+         "name": "Latest run report",
+         "description": "The most recent run as a structured report (results, cost, readiness). "
+                        "Any run: galeqea://{project}/runs/{run_id}/report. RCA: "
+                        "galeqea://{project}/rca/{run_id}.",
+         "mimeType": "application/json"},
+        {"uri": f"galeqea://{project_id}/releases",
+         "name": "Releases",
+         "description": "Release milestones with version, status, exit criteria and sign-off. "
+                        "A milestone report (readiness + metrics): "
+                        "galeqea://{project}/releases/{version}/report.",
          "mimeType": "application/json"},
     ]
 
@@ -224,7 +253,38 @@ async def read_resource(uri: str) -> dict:
         "coverage": ("get_coverage", {}),
         "flaky": ("get_flaky_tests", {}),
         "approvals": ("get_audit_trail", {"limit": 25}),
+        "audit": ("get_audit_trail", {"limit": 50}),
     }
+
+    # The project briefing: Markdown, the recommended first read.
+    if path == "context":
+        with session_scope() as db:
+            from ..models import Project
+            from ..reports.context import project_context_markdown
+
+            project = db.get(Project, project_id)
+            if project is None:
+                return _error(f"unknown project {project_id!r}")
+            return _text_resource(uri, project_context_markdown(db, project))
+
+    # Release milestones: the list a test manager reads a release from.
+    if path == "releases":
+        from sqlalchemy import select
+
+        with session_scope() as db:
+            from ..models import Milestone
+            from ..services import release as release_svc
+
+            rows = db.execute(
+                select(Milestone).where(Milestone.project_id == project_id)
+                .order_by(Milestone.created_at.desc())).scalars()
+            return _resource(uri, {"milestones": [release_svc.milestone_card(m) for m in rows]})
+
+    # Report resources wrap the shared report builders (same JSON the API serves).
+    report_payload = _report_resource(project_id, path)
+    if report_payload is not None:
+        return _resource(uri, report_payload)
+
     if path == "app-model":
         with session_scope() as db:
             from ..api.routes.intelligence import app_model
@@ -280,6 +340,53 @@ def _resource(uri: str, payload: Any) -> dict:
             "text": json.dumps(payload, indent=2, default=str),
         }]
     }
+
+
+def _text_resource(uri: str, text: str) -> dict:
+    return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": text}]}
+
+
+def _report_resource(project_id: str, path: str) -> dict | None:
+    """Build a report for a report-shaped resource path (traceability, heals,
+    runs/{id}/report, runs/latest/report, rca/{run_id}). None if not a report path
+    or the run doesn't belong to the project. The same JSON the HTTP API serves."""
+    from sqlalchemy import select
+
+    from ..models import Project, Run
+    from ..reports import heals as heals_report
+    from ..reports import rca as rca_report
+    from ..reports import traceability as traceability_report
+
+    def _run(db, rid):
+        if rid == "latest":
+            return db.execute(
+                select(Run).where(Run.project_id == project_id).order_by(Run.number.desc()).limit(1)
+            ).scalars().first()
+        run = db.get(Run, rid)
+        return run if run and run.project_id == project_id else None
+
+    with session_scope() as db:
+        project = db.get(Project, project_id)
+        if project is None:
+            return None
+        if path == "traceability":
+            return traceability_report.build_traceability_report(db, project)
+        if path == "heals":
+            return heals_report.build_heals_report(db, project)
+        if path.startswith("runs/") and path.endswith("/report"):
+            from ..reports import report_v2
+            run = _run(db, path[len("runs/"):-len("/report")])
+            return report_v2.build(db, project, run) if run else None
+        if path.startswith("rca/"):
+            run = _run(db, path[len("rca/"):])
+            return rca_report.build_rca_report(db, project, run) if run else None
+        if path.startswith("releases/") and path.endswith("/report"):
+            from ..reports import release_report
+            from ..services import release as release_svc
+            version = path[len("releases/"):-len("/report")]
+            m = release_svc.milestone_for(db, project_id, version)
+            return release_report.build(db, m) if m else None
+    return None
 
 
 def server_info() -> dict:

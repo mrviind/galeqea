@@ -1,6 +1,6 @@
 """OpenAI-compatible streaming: tool-call reassembly and is_error parity.
 
-The real failure mode this exercises: providers stream a tool call in fragments —
+The real failure mode this exercises: providers stream a tool call in fragments:
 the name in one chunk, the JSON arguments split across several, the id sometimes
 only in the first fragment. A parser that assumes one chunk per call silently
 loses arguments and calls the tool with `{}`. These fragment deliberately.
@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-
-import pytest
 
 from galeqea.ai.providers.base import Message, Role
 from galeqea.ai.providers.openai_compat import OpenAICompatibleProvider
@@ -132,7 +130,7 @@ def test_text_preamble_then_a_tool_call_both_arrive():
 
 
 def test_a_fragment_that_never_names_a_tool_is_dropped():
-    """A malformed stream must not emit a call with an empty name — it would 400."""
+    """A malformed stream must not emit a call with an empty name; it would 400."""
     lines = [
         _sse({"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "{}"}}]}}]}),
         "data: [DONE]",
@@ -172,3 +170,22 @@ def test_the_error_marker_is_not_doubled():
     wire = OpenAICompatibleProvider._to_wire(
         [Message(role=Role.TOOL, tool_call_id="c", content="[tool error] already", is_error=True)], "")
     assert wire[0]["content"].count("[tool error]") == 1
+
+
+# --------------------------------------------------------------------------- #
+# build_provider() construction - every registered provider must accept the
+# same call shape build_provider() always uses (model/api_key/base_url), since
+# that is the one call site every resolution path (for_project/for_role/
+# for_selection) funnels through.
+# --------------------------------------------------------------------------- #
+def test_every_local_provider_builds_with_an_explicit_api_key():
+    """Regression: OllamaProvider didn't declare api_key, so it fell into
+    **opts and collided with the api_key="" the constructor also passes to
+    super().__init__() - build_provider(provider="ollama", api_key=<anything>)
+    raised "got multiple values for keyword argument 'api_key'" on every call,
+    which is exactly what build_provider always does (it always passes api_key)."""
+    from galeqea.ai.providers.registry import build_provider
+
+    for provider in ("ollama", "claude_cli", "openai_compatible"):
+        p = build_provider(provider=provider, model="x", api_key="should-be-ignored-or-accepted")
+        assert p.name == provider

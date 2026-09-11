@@ -14,13 +14,35 @@ permissions:
 
 jobs:
   api:
-    name: API · tests and lint
+    name: API · tests and lint (${{ matrix.db }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [sqlite, postgres]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: galeqea
+          POSTGRES_PASSWORD: galeqea
+          POSTGRES_DB: galeqea_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U galeqea"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # The Postgres leg points the suite at the throwaway service DB; the SQLite
+      # leg leaves it unset so conftest uses an isolated temp SQLite file.
+      GALEQEA_DATABASE_URL: >-
+        ${{ matrix.db == 'postgres' && 'postgresql+psycopg://galeqea:galeqea@localhost:5432/galeqea_test' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12', cache: pip }
       - run: pip install -e "apps/api[dev]"
+      - if: matrix.db == 'postgres'
+        run: pip install "psycopg[binary]>=3.2"
       - run: ruff check apps/api/galeqea
       - run: cd apps/api && python -m pytest -q
 
@@ -34,6 +56,8 @@ jobs:
       - run: cd apps/web && npm install --no-audit --no-fund
       - run: cd apps/web && npx tsc --noEmit
       - run: cd apps/web && npm run build
+      - name: Bundle budget (initial JS ≤ 200 KB gzip)
+        run: cd apps/web && node scripts/check-bundle.mjs
 
   runner:
     name: Runner · protocol self-test
@@ -43,7 +67,28 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - run: cd apps/runner && npm install --no-audit --no-fund
+      - run: cd apps/runner && npm test          # unit tests (page-state trimmer, …)
+      - run: cd apps/runner && node bench-tokens.mjs   # token budget guard (WO#8-D)
       - run: cd apps/runner && node src/cli.mjs --self-test
+
+  a11y:
+    name: Accessibility · axe on our own UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: pip install -e "apps/api[dev]"
+      - run: cd apps/web && npm install --no-audit --no-fund && npm run build
+      - run: cd apps/runner && npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: Launch GaleQEA
+        run: cd apps/api && nohup python -m galeqea.cli up --host 127.0.0.1 --port 8080 >/tmp/app.log 2>&1 &
+      - name: Wait for readiness
+        run: for i in $(seq 1 30); do curl -sf http://127.0.0.1:8080/readyz && break || sleep 1; done
+      - name: axe (WCAG A/AA: fail on serious/critical)
+        run: cd apps/runner && node a11y.mjs
 
   e2e:
     name: End to end · real browser
@@ -62,6 +107,143 @@ jobs:
       - run: cd apps/api && python -m pytest -q
       - name: Verify the audit ledger
         run: cd apps/api && python -m galeqea.cli audit --verify-only
+
+  zero-config-smoke:
+    name: Zero-config smoke · image boots on SQLite, no env
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the shipped image
+        run: docker build -t galeqea:ci .
+      - name: Boot with NO configuration (local profile → SQLite, no services)
+        run: |
+          docker run -d --name galeqea -p 8080:8080 galeqea:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/api/health >/tmp/health.json 2>/dev/null; then break; fi
+            sleep 2
+          done
+          cat /tmp/health.json
+      - name: Healthy, ready, on SQLite, not stale
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          h = json.load(urllib.request.urlopen("http://localhost:8080/api/health"))
+          assert h["status"] == "ok", h
+          assert h.get("stale_api") is False, h
+          assert h.get("offline_capable") is True, h
+          # zero-config uses SQLite under GALEQEA_HOME=/data, never an external DB
+          assert "postgres" not in json.dumps(h).lower(), h
+          r = urllib.request.urlopen("http://localhost:8080/readyz")
+          assert r.status == 200, r.status
+          print("health ok · readyz 200 · stale_api False · offline_capable True")
+          PY
+      - name: On-ramp target reachable + golden-path CLI wired (bundled demo app)
+        run: |
+          # The image bundles examples/. Serve the demo app inside the container and
+          # confirm (a) it responds and (b) the golden-path CLI runs in the shipped
+          # image and correctly gates a fresh install (exit 3 = no approved plan yet
+          # The AI-driven plan+approval on-ramp is covered by the e2e job.
+          docker exec galeqea sh -lc '
+            cd examples/demo-app && python3 -m http.server 8765 >/tmp/demo.log 2>&1 &
+            for i in $(seq 1 20); do
+              python3 -c "import urllib.request;urllib.request.urlopen(\"http://127.0.0.1:8765/\")" 2>/dev/null && break
+              sleep 1
+            done
+            python3 -c "import urllib.request;print(\"demo app:\", urllib.request.urlopen(\"http://127.0.0.1:8765/\").status)"
+            python3 -m galeqea.cli test http://127.0.0.1:8765 --format json; code=$?
+            echo "galeqea test exit=$code"
+            [ "$code" -eq 3 ] || { echo "expected exit 3 (no approved plan on a fresh install), got $code"; exit 1; }
+          '
+      - name: Runner protocol self-test in the shipped image
+        run: docker exec galeqea node apps/runner/src/cli.mjs --self-test
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs galeqea || true
+
+  golden-path-smoke:
+    name: Golden Path smoke · a real run through the image via a human approval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the shipped image
+        run: docker build -t galeqea:ci .
+      - name: Boot multi-user with a bootstrapped admin
+        run: |
+          docker run -d --name gp \
+            -e GALEQEA_SINGLE_USER_MODE=false \
+            -e GALEQEA_ADMIN_EMAIL=admin@ci.example \
+            -e GALEQEA_ADMIN_PASSWORD=ci-admin-secret \
+            -p 8080:8080 galeqea:ci
+          for i in $(seq 1 60); do curl -fsS http://localhost:8080/readyz >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS http://localhost:8080/api/health >/dev/null
+      - name: Serve the bundled demo app inside the container
+        run: |
+          docker exec -d gp sh -lc 'cd examples/demo-app && python3 -m http.server 8765'
+          docker exec gp sh -lc 'for i in $(seq 1 20); do python3 -c "import urllib.request;urllib.request.urlopen(\"http://127.0.0.1:8765/\")" 2>/dev/null && break; sleep 1; done'
+      - name: Log in as the admin (a human), collect session + CSRF
+        run: |
+          curl -fsS -c /tmp/cj.txt -X POST http://localhost:8080/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"admin@ci.example","password":"ci-admin-secret"}' >/dev/null
+          grep -q galeqea_session /tmp/cj.txt || { echo "no session cookie"; exit 1; }
+          echo "CSRF=$(grep galeqea_csrf /tmp/cj.txt | awk '{print $NF}')" >> "$GITHUB_ENV"
+          echo "PID=$(curl -fsS -b /tmp/cj.txt http://localhost:8080/api/projects | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')" >> "$GITHUB_ENV"
+      - name: Propose a Golden Path plan (deterministic, no model): CLI
+        run: docker exec gp python3 -m galeqea.cli plan propose http://127.0.0.1:8765
+      - name: The gate holds, galeqea test refuses without an approved plan (exit 3)
+        run: |
+          docker exec gp sh -lc 'python3 -m galeqea.cli test http://127.0.0.1:8765 --no-wait; c=$?; [ "$c" -eq 3 ] || { echo "expected exit 3, got $c"; exit 1; }'
+      - name: The human admin approves the plan over HTTP
+        run: |
+          JID=$(curl -fsS -b /tmp/cj.txt "http://localhost:8080/api/projects/$PID/journey" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+          curl -fsS -b /tmp/cj.txt -H "x-csrf-token: $CSRF" -H 'Content-Type: application/json' \
+            -X POST "http://localhost:8080/api/projects/$PID/journeys/$JID/plan/approve" -d '{}' | tee /tmp/approve.json
+          python3 -c "import json;d=json.load(open('/tmp/approve.json'));assert d['applied'] and d['result']['keys'], d"
+      - name: The approval is on the hash-chained ledger with the human principal
+        run: |
+          curl -fsS -b /tmp/cj.txt "http://localhost:8080/api/projects/$PID/audit?limit=10" >/tmp/audit.json
+          python3 - <<'PY'
+          import json
+          evs = json.load(open("/tmp/audit.json"))["events"]
+          appr = [e for e in evs if e["action"] == "approval.approved"]
+          assert appr, "no approval.approved event on the ledger"
+          e = appr[0]
+          assert e["actor_kind"] == "human", e
+          assert "admin@ci.example" in (e["actor"] or ""), e
+          print("approval.approved by", e["actor_kind"], "·", e["actor"])
+          PY
+      - name: galeqea test now runs the approved Golden Path (real Chromium)
+        run: |
+          docker exec gp sh -lc 'python3 -m galeqea.cli test http://127.0.0.1:8765 --format junit >/tmp/gp.xml 2>&1; echo "galeqea test exit=$?"'
+          docker exec gp python3 -m galeqea.cli readiness latest
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs gp || true
+
+  licenses:
+    name: Licenses · permissive-only allowlist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Python deps are permissive (LGPL psycopg is a reviewed exception)
+        run: |
+          pip install -e "apps/api[postgres,s3]" pip-licenses
+          pip-licenses --format=csv > /tmp/pylic.csv
+          python3 .github/scripts/check_licenses.py /tmp/pylic.csv
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Runner npm deps carry no forbidden copyleft
+        run: |
+          cd apps/runner && npm install --no-audit --no-fund
+          npx --yes license-checker --production --excludePrivatePackages \
+            --failOn "AGPL-1.0;AGPL-3.0;GPL-2.0;GPL-3.0;LGPL-3.0;SSPL-1.0;BUSL-1.1"
+      - name: Web npm deps carry no forbidden copyleft
+        run: |
+          cd apps/web && npm install --no-audit --no-fund
+          npx --yes license-checker --production --excludePrivatePackages \
+            --failOn "AGPL-1.0;AGPL-3.0;GPL-2.0;GPL-3.0;LGPL-3.0;SSPL-1.0;BUSL-1.1"
 
   ai-review-gate:
     name: Human review gate on AI-assisted changes

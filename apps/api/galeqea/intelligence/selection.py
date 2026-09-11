@@ -150,7 +150,7 @@ def select_for_change(
         chosen = chosen[:budget]
 
     total = len(scored)
-    # A project with no approved tests is a legitimate state — a fresh workspace,
+    # A project with no approved tests is a legitimate state: a fresh workspace,
     # or one where everything is still proposed. It must return an empty selection,
     # not divide by zero. The percentage is only meaningful when there is a suite.
     if total == 0:

@@ -394,7 +394,7 @@ def decide_finding(
                 "status": finding.status,
                 "test_id": existing.id,
                 "key": existing.key,
-                "note": "already promoted — returning the existing test",
+                "note": "already promoted, returning the existing test",
             }
 
     finding.reviewed_by = user.id
@@ -594,3 +594,51 @@ def decide_visual(
     )
     db.commit()
     return {"status": comparison.status, **result}
+
+
+# --------------------------------------------------------------------------- #
+# Tester-authored exploratory (SBTM) sessions
+# --------------------------------------------------------------------------- #
+@router.post("/exploration/manual", status_code=201)
+def start_manual_session(payload: dict, project: Project = Depends(get_project),
+                         db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ...services import manual_session
+    try:
+        session = manual_session.start(db, project, charter=payload.get("charter", ""),
+                                       minutes=int(payload.get("minutes", 30)), actor=user)
+    except manual_session.ManualSessionError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    db.commit()
+    return manual_session.report(session)
+
+
+@router.post("/exploration/manual/entry")
+def add_manual_entry(payload: dict, project: Project = Depends(get_project),
+                     db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ...services import manual_session
+    kind = "bug" if payload.get("kind") == "bug" else "note"
+    try:
+        session = manual_session.add_entry(db, project, kind=kind, text=payload.get("text", ""))
+    except manual_session.ManualSessionError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    db.commit()
+    return manual_session.report(session)
+
+
+@router.post("/exploration/manual/end")
+def end_manual_session(project: Project = Depends(get_project), db: Session = Depends(get_db),
+                       user: User = Depends(current_user)):
+    from ...services import manual_session
+    try:
+        rep = manual_session.end(db, project, actor=user)
+    except manual_session.ManualSessionError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    db.commit()
+    return rep
+
+
+@router.get("/exploration/manual/active")
+def get_active_manual(project: Project = Depends(get_project), db: Session = Depends(get_db)):
+    from ...services import manual_session
+    session = manual_session.active(db, project.id)
+    return manual_session.report(session) if session else {"active": False}

@@ -22,7 +22,6 @@ from ..config import settings
 from ..core.events import Ev, Event, bus
 from ..db import session_scope
 from ..models import (
-    Artifact,
     Run,
     RunStatus,
     RunStepRecord,
@@ -52,6 +51,11 @@ class RunContext:
     #: Set when this process is an exploratory session rather than a test run.
     exploration_session_id: str | None = None
     recording_session_id: str | None = None
+    #: Set by a login run: the captured session (sealed before it is persisted).
+    login_result: dict | None = None
+    #: Set by a pdf render job: the produced PDF bytes, or the failure reason.
+    pdf_result: bytes | None = None
+    pdf_error: str | None = None
     #: App Model discovery state for this run.
     current_screen_id: str | None = None
     previous_screen_id: str | None = None
@@ -82,6 +86,10 @@ class RunSupervisor:
                 "passed": 0, "failed": 0, "skipped": len(plan["_skipped"]),
                 "needs_review": 0, "flaky": 0,
             }
+            # A test the compiler skipped (auth-gated with no credential, no
+            # executable steps) is recorded as a skipped result with its reason, so
+            # it is visible on the board and the report and never silently missing.
+            self._record_skipped(db, run, plan["_skipped"], cases)
             db.flush()
 
         await bus.publish(Event(
@@ -197,6 +205,25 @@ class RunSupervisor:
     def _resolve_cases(self, db: Session, run: Run) -> list[TestCase]:
         return select_tests(db, run.project_id, run.selection or {})
 
+    def _record_skipped(self, db: Session, run: Run, skipped: list[dict],
+                        cases: list[TestCase]) -> None:
+        """Persist a skipped RunTest per compiler-skipped test, carrying the reason.
+
+        Only auth-gated and other *intentional* skips get a row, because a "no executable
+        steps" skip is a build gap, not a result. Auth-gated skips especially must
+        show (with 'add credentials'), never vanish into a lower total."""
+        from ..models import RunTest
+        by_key = {c.key: c for c in cases}
+        for entry in skipped:
+            if not entry.get("auth_gated"):
+                continue
+            tc = by_key.get(entry["key"])
+            db.add(RunTest(
+                run_id=run.id, test_case_id=tc.id if tc else "", test_key=entry["key"],
+                title=tc.title if tc else entry["key"], status=RunStatus.SKIPPED,
+                error_type="auth_gated", error_message=entry["reason"],
+            ))
+
     async def _drive(self, plan: dict, ctx: RunContext) -> dict:
         # The plan goes to a file, not to stdin: stdin stays open for the whole
         # run as the reply channel for heal/judge/handoff requests, so a runner
@@ -211,6 +238,10 @@ class RunSupervisor:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                # A single NDJSON line can be large (a base64 artifact, a big
+                # console/snapshot payload); the default 64 KiB reader limit would
+                # raise LimitOverrunError and drop the event. 16 MiB is ample.
+                limit=16 * 1024 * 1024,
             )
         except OSError as exc:
             return await self._finish(
@@ -395,16 +426,10 @@ class RunSupervisor:
                     artifacts=step.get("artifacts", []),
                 ))
 
+            from ..services.artifacts import record_artifact
+
             for art in event.get("artifacts", []):
-                path = Path(art.get("path", ""))
-                db.add(Artifact(
-                    run_id=ctx.run_id,
-                    run_test_id=record.id,
-                    kind=art.get("kind", "screenshot"),
-                    path=str(path),
-                    label=art.get("label", ""),
-                    size_bytes=path.stat().st_size if path.exists() else 0,
-                ))
+                record_artifact(db, run_id=ctx.run_id, run_test_id=record.id, art=art)
 
         await bus.publish(Event(
             type=Ev.RUN_TEST_FINISHED, project_id=ctx.project_id, run_id=ctx.run_id,
@@ -502,8 +527,14 @@ class RunSupervisor:
 
     # --- request/response handlers -------------------------------------- #
     async def _on_heal_request(self, event: dict, ctx: RunContext) -> dict:
+        from ..core.metrics import observe_state_tokens
+        observe_state_tokens(event.get("state_tokens"))  # WO#8-A: page-state size/call
         with session_scope() as db:
-            engine = HealingEngine(db, provider=self.provider, project_id=ctx.project_id)
+            # Locating/healing routes to the "grounder" role, where a small/cheap model can
+            # do it while the planner keeps a frontier model (WO#8-C).
+            from ..ai.providers.registry import for_role
+            engine = HealingEngine(db, provider=for_role(db, ctx.project_id, "healer"),
+                                   project_id=ctx.project_id)
             outcome = await engine.heal(event)
 
         await bus.publish(Event(
@@ -518,16 +549,20 @@ class RunSupervisor:
         return outcome.as_response(event["requestId"])
 
     async def _on_judge_request(self, event: dict, ctx: RunContext) -> dict:
+        from ..core.metrics import observe_state_tokens
         from ..intelligence.judge import judge_step
+        observe_state_tokens(event.get("state_tokens"))  # WO#8-A: page-state size/call
 
         with session_scope() as db:
+            from ..ai.providers.registry import for_role
             verdict = await judge_step(
-                db, provider=self.provider, project_id=ctx.project_id,
+                db, provider=for_role(db, ctx.project_id, "judge"), project_id=ctx.project_id,
                 run_test_id=ctx.run_test_ids.get(event.get("testId", "")),
                 question=event.get("question", ""),
                 aria_snapshot=event.get("ariaSnapshot", ""),
                 url=event.get("url", ""),
                 step_index=event.get("stepIndex", 0),
+                state_tokens=event.get("state_tokens", 0),
             )
         return {"requestId": event["requestId"], **verdict}
 
@@ -578,7 +613,7 @@ class RunSupervisor:
         await bus.publish(Event(
             type=Ev.RUN_LOG, project_id=ctx.project_id, run_id=ctx.run_id,
             payload={"level": "explore", "message":
-                     f"exploring {event.get('url')} — {event.get('charter', '')[:120]}"},
+                     f"exploring {event.get('url')}: {event.get('charter', '')[:120]}"},
         ))
 
     async def _on_explore_decide(self, event: dict, ctx: RunContext) -> dict:
@@ -591,7 +626,7 @@ class RunSupervisor:
             type=Ev.RUN_LOG, project_id=ctx.project_id, run_id=ctx.run_id,
             payload={"level": "explore", "message":
                      f"{event.get('step'):>3} {event.get('action')} "
-                     f"{event.get('target', '')[:40]} — {event.get('rationale', '')[:90]}"},
+                     f"{event.get('target', '')[:40]}: {event.get('rationale', '')[:90]}"},
         ))
 
     async def _on_explore_log(self, event: dict, ctx: RunContext) -> None:
@@ -642,6 +677,94 @@ class RunSupervisor:
 
     async def _on_handoff_ended(self, event: dict, ctx: RunContext) -> None:
         return None
+
+    async def _on_handoff_session(self, event: dict, ctx: RunContext) -> None:
+        """A log-in-for-me handoff resumed, so seal the established session onto the
+        run so the journey can adopt and reuse it. Only the sealed envelope lands."""
+        import json as _json
+
+        from ..core import vault
+
+        state = event.get("storageState")
+        if not state:
+            return None
+        sealed = vault.seal(_json.dumps(state), aad=f"auth:{ctx.project_id}")
+        with session_scope() as db:
+            run = db.get(Run, ctx.run_id)
+            if run:
+                run.ci_metadata = {**(run.ci_metadata or {}), "auth_sealed": sealed}
+
+    async def login(self, *, run_id: str, project_id: str, login: dict,
+                    headless: bool = True) -> dict:
+        """Drive a login-only run and return the captured session. The plaintext
+        credentials live only in the transient plan file (scrubbed here after);
+        the returned storageState is sealed by the caller before it is persisted."""
+        artifacts_dir = Path(settings.artifacts_dir) / run_id
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        plan = {
+            "runId": run_id, "artifactsDir": str(artifacts_dir), "headless": headless,
+            "browsers": ["chromium"], "login": login, "tests": [],
+        }
+        ctx = RunContext(run_id=run_id, project_id=project_id, artifacts_dir=artifacts_dir)
+        await self._drive(plan, ctx)
+        # The plan file carries the plaintext credentials, so never leave it behind.
+        with contextlib.suppress(Exception):
+            (artifacts_dir / "plan.json").unlink()
+        return ctx.login_result or {"ok": False, "error": "the runner returned no login result"}
+
+    async def render_pdf(self, html: str) -> tuple[bytes | None, str | None]:
+        """Render HTML to a PDF with the runner's own Chromium, not a print service.
+        Returns (bytes, None) on success or (None, reason) on failure, so the caller
+        can report *why* a PDF is missing rather than dropping it silently."""
+        import secrets
+
+        run_id = "pdf-" + secrets.token_hex(6)
+        artifacts_dir = Path(settings.artifacts_dir) / run_id
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        plan = {"runId": run_id, "artifactsDir": str(artifacts_dir), "headless": True,
+                "browsers": ["chromium"], "pdf": {"html": html}, "tests": []}
+        ctx = RunContext(run_id=run_id, project_id="", artifacts_dir=artifacts_dir)
+        try:
+            await self._drive(plan, ctx)
+        except Exception as exc:  # noqa: BLE001 (surface the reason, don't swallow)
+            return None, f"{type(exc).__name__}: {exc}"[:200]
+        finally:
+            with contextlib.suppress(Exception):
+                (artifacts_dir / "plan.json").unlink()
+        if ctx.pdf_result:
+            return ctx.pdf_result, None
+        return None, ctx.pdf_error or "the runner produced no PDF"
+
+    async def _on_pdf_result(self, event: dict, ctx: RunContext) -> None:
+        if not event.get("ok") or not event.get("path"):
+            ctx.pdf_error = event.get("error") or "the PDF render failed"
+            return
+        path = ctx.artifacts_dir / event["path"]
+        try:
+            ctx.pdf_result = path.read_bytes()
+        except OSError as exc:
+            ctx.pdf_error = f"PDF file unreadable: {exc}"[:200]
+        finally:
+            with contextlib.suppress(Exception):
+                path.unlink()
+
+    async def _on_login_result(self, event: dict, ctx: RunContext) -> None:
+        """Seal the captured session and hand it back through the context. Only the
+        sealed envelope is ever stored; the raw storageState stops here."""
+        import json as _json
+
+        from ..core import vault
+
+        state = event.get("storageState")
+        sealed = None
+        if state and event.get("ok"):
+            sealed = vault.seal(_json.dumps(state), aad=f"auth:{ctx.project_id}")
+        ctx.login_result = {"ok": bool(event.get("ok")), "error": event.get("error"),
+                            "sealed": sealed, "landing_url": event.get("landingUrl")}
+        with session_scope() as db:
+            run = db.get(Run, ctx.run_id)
+            if run and sealed:
+                run.ci_metadata = {**(run.ci_metadata or {}), "auth_sealed": sealed}
 
     async def _on_self_test(self, event: dict, ctx: RunContext) -> None:
         return None

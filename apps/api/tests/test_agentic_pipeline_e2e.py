@@ -1,7 +1,7 @@
 """End-to-end agentic pipeline.
 
 One realistic episode driven through the *real* tool registry and the *real*
-agent loop — only the model is scripted. This is the test that proves the parts
+agent loop; only the model is scripted. This is the test that proves the parts
 built across this session actually compose: a model that plans a QE task and
 calls tool after tool gets coherent results, each flowing into the next, the
 workspace panes are driven, and the loop terminates with a sensible answer.
@@ -19,7 +19,7 @@ import json
 import pytest
 
 from galeqea.ai.agent import Agent
-from galeqea.ai.providers.base import Completion, Delta, LLMProvider, Role, Usage
+from galeqea.ai.providers.base import Completion, LLMProvider, Role
 from galeqea.ai.tools import ToolContext, registry
 from galeqea.ai.toolset import tool_catalog  # noqa: F401  (installs every tool)
 from galeqea.core.events import Ev, bus
@@ -50,7 +50,7 @@ class ScriptedSDET(LLMProvider):
     """A model that runs the QE pipeline, feeding each tool's output to the next.
 
     Rather than replaying fixed arguments, it *reads the previous tool result*
-    from the message history — exactly what a real model does — so the test
+    from the message history, exactly what a real model does, so the test
     proves results genuinely flow between turns, not that a fixed script happens
     to line up.
     """
@@ -161,7 +161,7 @@ def test_the_full_qe_pipeline_runs_through_the_real_loop(db, project, checkout_r
         "generate_playwright_script", "review_test", "judge_test_against_criteria",
     ]
 
-    # 2. Every tool succeeded — the results genuinely composed.
+    # 2. Every tool succeeded: the results genuinely composed.
     assert all(s["result"]["ok"] for s in result.steps), \
         {s["tool"]: s["result"].get("error") for s in result.steps if not s["result"]["ok"]}
 
@@ -174,7 +174,7 @@ def test_the_full_qe_pipeline_runs_through_the_real_loop(db, project, checkout_r
     assert by_tool["review_test"]["verdict"] in {"sound", "advisory", "needs_work", "blocked"}
     assert by_tool["judge_test_against_criteria"]["criteria_count"] == 2
 
-    # 4. The workspace panes were driven — a _ui projection reached the bus for
+    # 4. The workspace panes were driven: a _ui projection reached the bus for
     #    the tools that carry one.
     step_events = [e for e in events if e.type == Ev.AGENT_STEP]
     ui_tools = {e.payload["tool"] for e in step_events if e.payload.get("ui")}

@@ -1,6 +1,6 @@
 # Keep dependencies current across the polyglot repo. Grouped so a week's patch
 # and minor updates arrive as one reviewable PR per ecosystem, not a swarm.
-# Major bumps are ignored by default — they tend to break the build and deserve a
+# Major bumps are ignored by default: they tend to break the build and deserve a
 # deliberate, human-driven upgrade rather than an automatic PR.
 version: 2
 updates:

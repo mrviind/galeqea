@@ -168,15 +168,38 @@ def _headline(total: int, covered: int, uncovered: list, weak: list, by_risk: di
 
 
 def traceability_matrix(db: Session, project_id: str) -> list[dict]:
-    """Requirement → test → last result. The artefact auditors ask for."""
-    from ..models import TestStat
+    """Requirement → rules → tests → last result → defects. The full join an
+    auditor asks for; the rules layer makes a coverage gap precise: not "this
+    requirement is untested" but "this specific rule within it has no case" (WO#9-B).
+    """
+    from datetime import UTC, datetime
 
-    requirements = list(
-        db.execute(
-            select(RequirementItem).where(RequirementItem.project_id == project_id)
-            .order_by(RequirementItem.ref)
-        ).scalars()
-    )
+    from ..models import DefectLink, RequirementDoc, RequirementRule, TestStat
+
+    # De-duplicate by requirement ref, keeping the item from the LATEST document
+    # version. Older uploads of the same spec are superseded and must never
+    # multi-count coverage or gaps in the matrix (WO#9-C).
+    doc_time, archived_docs = {}, set()
+    for d in db.execute(
+        select(RequirementDoc).where(RequirementDoc.project_id == project_id)
+    ).scalars():
+        doc_time[d.id] = d.created_at
+        if (d.meta or {}).get("archived"):
+            archived_docs.add(d.id)
+    _floor = datetime(1970, 1, 1, tzinfo=UTC)
+    latest_by_ref: dict[str, RequirementItem] = {}
+    for item in db.execute(
+        select(RequirementItem).where(RequirementItem.project_id == project_id)
+    ).scalars():
+        if item.doc_id in archived_docs:      # superseded/hidden, so skip (WO#9-C)
+            continue
+        key = item.ref.upper()
+        current = latest_by_ref.get(key)
+        if current is None or (doc_time.get(item.doc_id) or _floor) > (
+            doc_time.get(current.doc_id) or _floor
+        ):
+            latest_by_ref[key] = item
+    requirements = sorted(latest_by_ref.values(), key=lambda i: i.ref)
     cases = list(
         db.execute(select(TestCase).where(TestCase.project_id == project_id)).scalars()
     )
@@ -184,16 +207,57 @@ def traceability_matrix(db: Session, project_id: str) -> list[dict]:
         s.test_case_id: s
         for s in db.execute(select(TestStat).where(TestStat.project_id == project_id)).scalars()
     }
+    # Same latest-version-only rule as `requirements` above: a rule belongs to
+    # exactly one item, so keep it only if its parent item is the one that
+    # survived the dedup. Otherwise two unrelated docs that happen to reuse the
+    # same ref (e.g. two different uploads both using "DEMO-001") double the
+    # rule rows under one requirement section in the matrix.
+    kept_item_ids = {item.id for item in latest_by_ref.values()}
+    rules = list(
+        db.execute(select(RequirementRule).where(RequirementRule.project_id == project_id)
+                   .order_by(RequirementRule.rule_id)).scalars()
+    )
+    rules_by_ref: dict[str, list] = {}
+    for r in rules:
+        if r.item_id is not None and r.item_id not in kept_item_ids:
+            continue
+        rules_by_ref.setdefault(r.requirement_ref.upper(), []).append(r)
+    defects_by_case: dict[str, list] = {}
+    for d in db.execute(select(DefectLink).where(DefectLink.project_id == project_id)).scalars():
+        if d.test_case_id:
+            defects_by_case.setdefault(d.test_case_id, []).append(d)
+
+    def _defects(case) -> list[dict]:
+        return [{"key": d.key, "tracker": d.tracker, "url": d.url,
+                 "status": d.status_cached} for d in defects_by_case.get(case.id, [])]
 
     rows: list[dict] = []
     for req in requirements:
         linked = [c for c in cases if req.ref.upper() in {r.upper() for r in (c.requirement_refs or [])}]
+        req_rules = rules_by_ref.get(req.ref.upper(), [])
+        rule_rows = []
+        for rule in req_rules:
+            covering = [c for c in cases if rule.rule_id in (c.covers or [])]
+            rule_rows.append({
+                "rule_id": rule.rule_id,
+                "rule_type": rule.rule_type,
+                "technique": rule.technique,
+                "text": rule.text,
+                "tests": [c.key for c in covering],
+                "covered": any(c.status == TestStatus.APPROVED for c in covering),
+                "open_questions": rule.open_questions or [],
+            })
         rows.append({
             "ref": req.ref,
             "title": req.title,
             "risk": req.risk,
+            "priority": _risk_priority(req, cases),
             "acceptance_criteria": req.acceptance_criteria or [],
             "open_questions": req.open_questions or [],
+            "source_anchor": req.source_anchor or {},
+            "rules": rule_rows,
+            "rules_total": len(rule_rows),
+            "rules_covered": sum(1 for r in rule_rows if r["covered"]),
             "tests": [
                 {
                     "key": c.key, "title": c.title, "category": c.category,
@@ -201,6 +265,9 @@ def traceability_matrix(db: Session, project_id: str) -> list[dict]:
                     "last_status": (stats.get(c.id).last_status if stats.get(c.id) else "never run"),
                     "flake_score": round(c.flake_score, 2),
                     "approved_by": c.approved_by,
+                    "covers": c.covers or [],
+                    "technique": (c.provenance or {}).get("technique", ""),
+                    "defects": _defects(c),
                     "provenance": c.provenance,
                 }
                 for c in linked
@@ -208,3 +275,24 @@ def traceability_matrix(db: Session, project_id: str) -> list[dict]:
             "covered": any(c.status == TestStatus.APPROVED for c in linked),
         })
     return rows
+
+
+def _risk_priority(req, cases: list) -> str:
+    """P1-P4 = business impact × change proximity × failure history (WO#9-B).
+
+    Impact from the requirement's own risk; proximity from whether any of its cases
+    is in flight (proposed/draft, i.e. actively being worked); history from whether a
+    covering case is currently failing. Deliberately coarse and explainable.
+    """
+    impact = {"critical": 3, "high": 2, "medium": 1, "low": 0}.get(req.risk, 1)
+    linked = [c for c in cases if req.ref.upper() in {r.upper() for r in (c.requirement_refs or [])}]
+    proximity = 1 if any(c.status in ("proposed", "draft") for c in linked) else 0
+    history = 1 if any((c.flake_score or 0) > 0.2 for c in linked) else 0
+    score = impact + proximity + history
+    if score >= 4:
+        return "P1"
+    if score == 3:
+        return "P2"
+    if score == 2:
+        return "P3"
+    return "P4"

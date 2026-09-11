@@ -1,7 +1,7 @@
-"""judge_test_against_criteria — the coverage review_test cannot see.
+"""judge_test_against_criteria: the coverage review_test cannot see.
 
 review_test asks "is this test structurally sound?". This asks "does it verify
-what the requirement demands?". A test can pass the first and fail the second —
+what the requirement demands?". A test can pass the first and fail the second;
 that is the whole point of having both.
 """
 
@@ -67,7 +67,7 @@ def test_a_test_with_no_assertions_covers_nothing():
 
 
 # --------------------------------------------------------------------------- #
-# Matching is conservative — it does not claim coverage it cannot see
+# Matching is conservative: it does not claim coverage it cannot see
 # --------------------------------------------------------------------------- #
 def test_a_single_shared_stopword_is_not_coverage():
     """An assertion that merely shares "the user" with a criterion is not

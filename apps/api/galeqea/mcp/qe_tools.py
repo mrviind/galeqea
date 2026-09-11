@@ -1,13 +1,13 @@
 """Quality-engineering tools the Copilot can call.
 
 Both are deterministic. Neither needs a model to produce its output, which means
-they keep working in No-AI mode and their results are reproducible — a generated
+they keep working in No-AI mode and their results are reproducible. A generated
 script that differs between two identical requests is not reviewable.
 
 They are registered ``read_only``: one reads requirements, the other renders
 text. Neither writes to the database, so neither passes through the approval
 gate. Persisting a generated script *is* a state change, and that is
-``create_test``'s job — already registered, already gated.
+``create_test``'s job, already registered and already gated.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ from ..models import RequirementItem
             },
             "guidance": {
                 "type": "string",
-                "description": "What to do next — in particular, whether criteria are missing.",
+                "description": "What to do next, in particular whether criteria are missing.",
             },
         },
     },
@@ -146,7 +146,7 @@ def _requirements_markdown(requirements: list[dict], feature: str, ref: str) -> 
 
     lines: list[str] = [f"# {ref or feature.title() or 'Requirements'}", ""]
     for item in requirements:
-        lines += [f"## {item['ref']} — {item['title']}", ""]
+        lines += [f"## {item['ref']}: {item['title']}", ""]
         lines += [f"`{item['kind']}` · risk **{item['risk']}**", ""]
         if item["text"]:
             lines += [item["text"].strip(), ""]
@@ -187,7 +187,7 @@ def _requirements_guidance(requirements: list[dict], criteria: int, feature: str
         return (
             f"Found {len(requirements)} requirement(s) ({refs}) but none carries "
             f"acceptance criteria. Ask the user for the criteria before writing "
-            f"tests — a test derived from a title alone asserts nothing useful."
+            f"tests. A test derived from a title alone asserts nothing useful."
         )
     unresolved = [q for r in requirements for q in r["open_questions"]]
     if unresolved:
@@ -311,7 +311,7 @@ def generate_playwright_script(args: dict, ctx: ToolContext) -> dict:
         },
         "guidance": (
             f"{len(unresolved)} locator(s) could not be derived from the scenario and are "
-            f"marked TODO in {page_class}.ts. Fill them in against the real DOM — do not "
+            f"marked TODO in {page_class}.ts. Fill them in against the real DOM. Do not "
             f"guess them. Use the recorder (Author → Record a session) to capture them with "
             f"a full locator ladder."
             if unresolved else
@@ -382,7 +382,7 @@ def _scenario_title(scenario: str) -> str:
 def _page_methods(actions: list[dict], assertions: list[dict]) -> tuple[list[dict], list[str]]:
     """One method per step, plus the locators each needs.
 
-    A locator is only emitted when the scenario names the element — in quotes, or
+    A locator is only emitted when the scenario names the element, in quotes or
     as a recognisable field phrase. Everything else becomes a TODO. Inventing
     `page.locator('.btn-primary')` because a button was mentioned is precisely
     the failure this refuses to commit.
@@ -418,14 +418,14 @@ ELEMENT_NOUN = r"(?:field|button|link|checkbox|dropdown|select|input|box|tab|men
 
 
 def _named_element(text: str) -> str | None:
-    """The element a step acts on — never the value it types into it.
+    """The element a step acts on, never the value it types into it.
 
     The distinction is the whole job. In::
 
         When the user enters "ravi@example.com" into the "Email address" field
 
     both strings are quoted, and taking the first produces
-    ``getByLabel('ravi@example.com')`` — a locator that looks plausible, matches
+    ``getByLabel('ravi@example.com')``, a locator that looks plausible, matches
     nothing, and names a field after its own contents. Worse, the value is often
     a number, and ``readonly 4242424242424242: Locator`` is not valid TypeScript.
 
@@ -439,7 +439,7 @@ def _named_element(text: str) -> str | None:
         if re.match(rf"\s+{ELEMENT_NOUN}\b", text[end:], re.IGNORECASE):
             return value
 
-    # 2. A quoted span preceded by into/in/on/to — the target of a transfer.
+    # 2. A quoted span preceded by into/in/on/to: the target of a transfer.
     for start, _, value in spans:
         if re.search(r"\b(?:into|in|on|to)\s+(?:the\s+)?$", text[:start], re.IGNORECASE):
             return value
@@ -479,7 +479,7 @@ def _locator_for(text: str, target: str | None) -> str | None:
 def _value_for(text: str) -> str | None:
     """The value being entered, when the step spells one out.
 
-    The first quoted span that follows an entry verb — which, given
+    The first quoted span that follows an entry verb, which, given
     :func:`_named_element` takes the one after "into", is the other one.
     """
     verb = re.search(r"\b(?:enters?|types?|fills?|sets?)\b", text, re.IGNORECASE)
@@ -737,7 +737,7 @@ def generate_bdd_scenarios(args: dict, ctx: ToolContext) -> dict:
                 "ok": False,
                 "error": (
                     f"{ref} has no acceptance criteria recorded. A scenario derived from the "
-                    "title alone asserts nothing — ask the user for the criteria first."
+                    "title alone asserts nothing. Ask the user for the criteria first."
                 ),
             }
 
@@ -772,7 +772,7 @@ def generate_bdd_scenarios(args: dict, ctx: ToolContext) -> dict:
         })
         if include_negative and derived and _implies_acceptance(criterion):
             scenarios.append({
-                "title": f"{_scenario_name(criterion)} — is refused when the condition is not met",
+                "title": f"{_scenario_name(criterion)}: is refused when the condition is not met",
                 "kind": "scenario",
                 "criterion_index": index,
                 "steps": [
@@ -839,7 +839,7 @@ def generate_bdd_scenarios(args: dict, ctx: ToolContext) -> dict:
         "techniques_applied": sorted({s["technique"] for s in scenarios}),
         "guidance": (
             f"{len(unresolved)} criterion(s) did not state an action, so their When step is a "
-            f"placeholder marked TODO — confirm the trigger with the user before scripting them. "
+            f"placeholder marked TODO. Confirm the trigger with the user before scripting them. "
             if unresolved else
             "Every scenario's action was derived from its criterion. "
         ) + "Pass any scenario to generate_playwright_script to render it; review the "
@@ -957,7 +957,7 @@ def _render_feature(feature: str, ref: str, scenarios: list[dict]) -> str:
         lines.append("")
         lines.append(f"  # Technique: {scenario['technique']}")
         if not scenario["derived"]:
-            lines.append("  # TODO: the action below was not stated in the criterion — confirm it.")
+            lines.append("  # TODO: the action below was not stated in the criterion. Confirm it.")
         keyword = "Scenario Outline" if scenario["kind"] == "outline" else "Scenario"
         lines.append(f"  {keyword}: {scenario['title']}")
         for kw, text in scenario["steps"]:
@@ -980,7 +980,7 @@ def _render_feature(feature: str, ref: str, scenarios: list[dict]) -> str:
     description=(
         "Generate realistic, reproducible test data for named fields, with the "
         "invalid variants each field should reject. Use it when a test needs "
-        "concrete values — an email, a card number, a postcode — instead of "
+        "concrete values (an email, a card number, a postcode) instead of "
         "inventing them inline, and when a negative test needs to know what "
         "'wrong' looks like for a field. Every value is a pure function of the "
         "seed, so the same request returns the same data on every machine, "
@@ -1101,7 +1101,7 @@ ACTION_ACTIONS = frozenset({
         "Critique a test the way a senior reviewer would, before a human spends "
         "time on it. Use it on every test an agent generated, and on a recorded "
         "one, prior to filing it: it catches the failures that make a test worse "
-        "than none — no assertion (a click-through that passes as long as nothing "
+        "than none: no assertion (a click-through that passes as long as nothing "
         "throws), an assertion that traces to no acceptance criterion, a step "
         "whose locator was guessed, an unlabelled TODO. It returns findings with "
         "a severity and the specific step each one is about, plus an overall "
@@ -1117,7 +1117,7 @@ ACTION_ACTIONS = frozenset({
             },
             "proposal": {
                 "type": "object",
-                "description": "An un-persisted proposal to review instead of a stored test — the object returned by generate_playwright_script or a create_test draft.",
+                "description": "An un-persisted proposal to review instead of a stored test: the object returned by generate_playwright_script or a create_test draft.",
                 "additionalProperties": True,
             },
         },
@@ -1144,7 +1144,7 @@ def review_test(args: dict, ctx: ToolContext) -> dict:
         findings.append(_finding(
             "critical", None, "no_assertion",
             "This test performs actions but asserts nothing. It passes as long as "
-            "no step errors, which proves the flow runs — not that it produces the "
+            "no step errors, which proves the flow runs, not that it produces the "
             "right result. Add an assertion tied to an acceptance criterion.",
         ))
 
@@ -1166,7 +1166,7 @@ def review_test(args: dict, ctx: ToolContext) -> dict:
         if "todo" in intent or "todo" in expected.lower() or "unimplemented" in expected.lower():
             findings.append(_finding(
                 "high", step["index"], "unresolved_step",
-                f"Step {step['index'] + 1} is an unresolved TODO — it will throw until "
+                f"Step {step['index'] + 1} is an unresolved TODO. It will throw until "
                 "filled in. Complete it against the real DOM or remove it.",
             ))
 
@@ -1276,7 +1276,7 @@ def _review_guidance(verdict: str, findings: list[dict]) -> str:
                 "durable locators. A human should still confirm the assertion is the right one.")
     if verdict == "blocked":
         return ("This test should not be filed as-is: it has a critical gap (usually no "
-                "assertion). Fix that before asking for review — a green run from it would "
+                "assertion). Fix that before asking for review. A green run from it would "
                 "prove nothing.")
     counts: dict[str, int] = {}
     for f in findings:
@@ -1293,14 +1293,14 @@ def _review_guidance(verdict: str, findings: list[dict]) -> str:
     "analyze_change_impact",
     description=(
         "Given a set of changed files, report which tests the change puts at "
-        "risk and, just as importantly, which it does not — so a pre-merge run "
+        "risk and, just as importantly, which it does not, so a pre-merge run "
         "can be short without leaving the change unguarded. Use it when a user "
         "names files they have changed, or a diff, and asks what to run. It ranks "
         "each test by how strongly its failure history correlates with the paths "
         "touched, always includes smoke and critical tests regardless, and states "
         "plainly what it is leaving out and why. Correlations are learned from "
         "past failures, so on a healthy suite that rarely fails the signal is weak "
-        "and the recommendation is deliberately cautious — treat the result as a "
+        "and the recommendation is deliberately cautious. Treat the result as a "
         "prioritisation, never as permission to skip everything it omits."
     ),
     parameters={
@@ -1351,13 +1351,13 @@ def analyze_change_impact(args: dict, ctx: ToolContext) -> dict:
         "signal": "weak" if weak else "strong",
         "guidance": (
             
-                "No test correlates strongly with these paths — the suite has little "
+                "No test correlates strongly with these paths. The suite has little "
                 "failure history against them. The selection is the safe-by-default set "
                 "(smoke + critical). Do not read the omissions as safe to skip; there is "
                 "simply no evidence either way yet."
                 if weak else
                 f"{len(selected)} test(s) correlate with the change and should run pre-merge. "
-                f"{len(omitted)} were omitted as unrelated — the report says why for each."
+                f"{len(omitted)} were omitted as unrelated. The report says why for each."
             
         ),
     }
@@ -1371,7 +1371,7 @@ def analyze_change_impact(args: dict, ctx: ToolContext) -> dict:
     description=(
         "Lay out the sequence of tool calls you intend to make for a multi-step "
         "task, for the user to see and confirm before any of it runs. Use it "
-        "whenever a request needs three or more steps, or any step that writes — "
+        "whenever a request needs three or more steps, or any step that writes: "
         "generating a suite of tests, importing a spec and filing everything, "
         "diagnosing then ticketing a failure. Each step names the tool, why it is "
         "there, and whether it changes state or needs approval. This does not "
@@ -1462,7 +1462,7 @@ def propose_plan(args: dict, ctx: ToolContext) -> dict:
         "steps": steps,
         "unknown_tools": unknown,
         "guidance": (
-            (f"Warning: {', '.join(unknown)} is not a registered tool — revise the plan. "
+            (f"Warning: {', '.join(unknown)} is not a registered tool. Revise the plan. "
              if unknown else "")
             + ("This plan changes state; the write steps will each still require approval "
                "when they run, so confirming the plan is not the same as approving those. "
@@ -1485,7 +1485,7 @@ def propose_plan(args: dict, ctx: ToolContext) -> dict:
     "escalate_to_human",
     description=(
         "Stop and hand the task to a person when you cannot complete it "
-        "correctly on your own. Use it — do not guess past the problem — when a "
+        "correctly on your own. Use it (do not guess past the problem) when a "
         "requirement is ambiguous and the answer changes the test, when a step "
         "needs a real locator you have not seen, when a decision is the user's to "
         "make (which environment, whether to overwrite), or when a tool keeps "
@@ -1508,7 +1508,7 @@ def propose_plan(args: dict, ctx: ToolContext) -> dict:
             "options": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "If the decision is a choice, the options — so the user can pick rather than compose an answer.",
+                "description": "If the decision is a choice, the options, so the user can pick rather than compose an answer.",
             },
             "severity": {
                 "type": "string",
@@ -1572,7 +1572,7 @@ def escalate_to_human(args: dict, ctx: ToolContext) -> dict:
         # papering over it with a guess.
         "guidance": (
             "You have escalated. Do not now attempt the task anyway or invent an "
-            "answer to your own question — end your turn by putting the question to "
+            "answer to your own question. End your turn by putting the question to "
             "the user, plainly, and wait for their reply."
         ),
         "_ui": {
@@ -1595,7 +1595,7 @@ def escalate_to_human(args: dict, ctx: ToolContext) -> dict:
 # judge_test_against_criteria
 # --------------------------------------------------------------------------- #
 #: Words that carry no distinguishing meaning when matching a criterion to a
-#: step. Matching on these produces false coverage — every step "covers" every
+#: step. Matching on these produces false coverage: every step "covers" every
 #: criterion because they all contain "the" and "user".
 _STOPWORDS = frozenset({
     "the", "a", "an", "is", "are", "be", "been", "being", "to", "of", "in", "on",
@@ -1610,7 +1610,7 @@ _STOPWORDS = frozenset({
     "judge_test_against_criteria",
     description=(
         "Check whether a test actually verifies each of a requirement's "
-        "acceptance criteria — the gap review_test cannot see. A test can be "
+        "acceptance criteria, the gap review_test cannot see. A test can be "
         "structurally sound (it asserts something, its locators are durable) and "
         "still silently miss a criterion, which is the failure that lets a "
         "green run hide an untested obligation. This maps every criterion to the "
@@ -1763,7 +1763,7 @@ def _resolve_criteria(args: dict, ctx: ToolContext) -> tuple[list[str], dict | N
     if not criteria:
         return [], {
             "ok": False,
-            "error": f"{ref} has no acceptance criteria recorded — there is nothing to judge coverage against.",
+            "error": f"{ref} has no acceptance criteria recorded. There is nothing to judge coverage against.",
         }
     return criteria, None
 
@@ -1805,7 +1805,7 @@ def _judge_guidance(verdict: str, uncovered: list[dict], assertions: int) -> str
     refs = "; ".join(f"“{c['criterion'][:70]}”" for c in uncovered[:3])
     tail = f" (+{len(uncovered) - 3} more)" if len(uncovered) > 3 else ""
     lead = (
-        "This test asserts nothing, so it covers no criteria at all — see review_test."
+        "This test asserts nothing, so it covers no criteria at all. See review_test."
         if assertions == 0 else
         f"{len(uncovered)} criterion(s) have no matching assertion: {refs}{tail}."
     )
@@ -1819,7 +1819,7 @@ def _judge_guidance(verdict: str, uncovered: list[dict], assertions: int) -> str
     "check_run_health",
     description=(
         "Before running or re-running tests, report how much of the selection is "
-        "known-flaky — tests that change verdict without the code changing. Use it "
+        "known-flaky, meaning tests that change verdict without the code changing. Use it "
         "ahead of run_tests, and especially before a re-run: blindly re-running a "
         "suite that is a third flaky wastes time and produces a red result that "
         "proves nothing about the change. It resolves the same selection run_tests "
@@ -1861,7 +1861,7 @@ def check_run_health(args: dict, ctx: ToolContext) -> dict:
             "flaky": [], "quarantined_in_selection": [],
             "guidance": (
                 "The selection resolves to no runnable tests. Check the suite name, tags or "
-                "keys — there is nothing to run, flaky or otherwise."
+                "keys. There is nothing to run, flaky or otherwise."
             ),
         }
 
@@ -1931,7 +1931,7 @@ def check_run_health(args: dict, ctx: ToolContext) -> dict:
                 }.get(recommendation, "advisory"),
                 "findings": [
                     {"severity": "medium", "step": None, "kind": "flaky_test",
-                     "message": f"{f['key']} — flake score {f['flake_score']} "
+                     "message": f"{f['key']}: flake score {f['flake_score']} "
                                 + (f"({', '.join(f['reasons'])})" if f["reasons"] else "")}
                     for f in flaky[:8]
                 ],
@@ -1944,19 +1944,19 @@ def _health_guidance(recommendation: str, flaky: list[dict], quarantined: list[d
     worst = ", ".join(f["key"] for f in flaky[:3])
     q_note = (f" {len(quarantined)} already-quarantined test(s) will be skipped." if quarantined else "")
     if recommendation == "all_quarantined":
-        return "Every test in this selection is quarantined — running it would execute nothing." + q_note
+        return "Every test in this selection is quarantined. Running it would execute nothing." + q_note
     if recommendation == "quarantine_first":
         return (
-            f"{len(flaky)} of {runnable} runnable tests are flaky ({worst}) — over half the selection. "
+            f"{len(flaky)} of {runnable} runnable tests are flaky ({worst}), over half the selection. "
             "Re-running this as-is will likely go red for reasons unrelated to the code. Quarantine "
             "the worst offenders or narrow the selection before running." + q_note
         )
     if recommendation == "run_but_expect_noise":
         return (
             f"{len(flaky)} of {runnable} tests are flaky ({worst}). Safe to run, but treat a failure "
-            "in those as suspect until confirmed — re-check them rather than trusting one red result." + q_note
+            "in those as suspect until confirmed. Re-check them rather than trusting one red result." + q_note
         )
     if recommendation == "empty":
         return "Nothing to run."
-    return (f"The selection is clean — no test above the flake threshold across {runnable} runnable "
+    return (f"The selection is clean. No test above the flake threshold across {runnable} runnable "
             f"tests. Good to run." + q_note)

@@ -32,6 +32,7 @@ log = logging.getLogger("galeqea.exploration")
 _STATE: dict[str, policy.ExplorerState] = {}
 _SEEN: dict[str, set[str]] = {}
 _TASKS: dict[str, asyncio.Task] = {}
+_GUARDRAILS: dict[str, dict] = {}
 
 
 async def start(
@@ -40,8 +41,10 @@ async def start(
     project_id: str,
     charter: str,
     environment: str = "",
+    base_url: str = "",
     max_steps: int = 30,
     allow_transactional: bool = False,
+    guardrails: dict | None = None,
     started_by: str | None = None,
 ) -> ExplorationSession:
     project = db.get(Project, project_id)
@@ -49,11 +52,18 @@ async def start(
         raise ValueError(f"unknown project {project_id}")
 
     env = environment or project.default_environment or "default"
-    base_url = (project.environments or {}).get(env, "")
+    # An explicit base_url (a journey target that isn't a named environment) wins;
+    # otherwise fall back to the configured environment URL.
+    base_url = base_url or (project.environments or {}).get(env, "")
     if not base_url:
         raise ValueError(
-            f"environment {env!r} has no URL configured — exploration needs somewhere to go"
+            f"environment {env!r} has no URL configured. Exploration needs somewhere to go"
         )
+    guardrails = guardrails or {}
+    # Guardrails bound the exploration: read-only turns off any transactional
+    # control, and the avoid-list / rate limit ride the explorer plan.
+    if guardrails.get("read_only"):
+        allow_transactional = False
 
     provider = _provider()
     session = ExplorationSession(
@@ -83,6 +93,7 @@ async def start(
         allow_transactional=allow_transactional,
     )
     _SEEN[session.id] = set()
+    _GUARDRAILS[session.id] = guardrails
     _TASKS[session.id] = asyncio.create_task(_drive(session.id, project_id))
     return session
 
@@ -94,6 +105,7 @@ async def _drive(session_id: str, project_id: str) -> None:
     artifacts = Path(settings.artifacts_dir) / f"explore-{session_id}"
     artifacts.mkdir(parents=True, exist_ok=True)
 
+    guardrails = _GUARDRAILS.get(session_id, {})
     with session_scope() as db:
         session = db.get(ExplorationSession, session_id)
         plan = {
@@ -104,11 +116,17 @@ async def _drive(session_id: str, project_id: str) -> None:
             "trace": False,
             "artifactsDir": str(artifacts),
             "tests": [],
+            # Honour the target's rate limit during exploration too.
+            "rateLimitRps": guardrails.get("rate_limit_rps"),
             "explore": {
                 "id": session_id,
                 "charter": session.charter,
                 "baseUrl": session.base_url,
                 "maxSteps": session.max_steps,
+                # The explorer stays within the charter's area and off the
+                # destructive-action avoid-list; read-only means fill-not-submit.
+                "readOnly": bool(guardrails.get("read_only")),
+                "avoid": guardrails.get("avoid") or [],
             },
         }
 
@@ -127,6 +145,7 @@ async def _drive(session_id: str, project_id: str) -> None:
         _STATE.pop(session_id, None)
         _SEEN.pop(session_id, None)
         _TASKS.pop(session_id, None)
+        _GUARDRAILS.pop(session_id, None)
 
 
 # --------------------------------------------------------------------------- #
@@ -150,7 +169,7 @@ async def decide(event: dict, *, project_id: str) -> dict:
     decision = await policy.decide(observation, state, provider=_provider())
 
     candidates = observation.get("candidates") or []
-    label = "—"
+    label = "-"
     if decision.target_index is not None and 0 <= decision.target_index < len(candidates):
         target = candidates[decision.target_index]
         label = target.get("name") or target.get("role") or "?"
@@ -267,7 +286,7 @@ async def finish(*, session_id: str, project_id: str, payload: dict) -> None:
         elif recurring:
             # Not the same as finding nothing: these defects are still there.
             headline += (
-                f"no new findings — but {recurring} already-known issue(s) are still present."
+                f"no new findings, but {recurring} already-known issue(s) are still present."
             )
         else:
             headline += "nothing worth reporting."
@@ -290,6 +309,134 @@ def _provider():
     from ..ai.providers.registry import default_provider
 
     return default_provider() if settings.ai_enabled else None
+
+
+async def explore_now(db, *, project, journey, area: str = "", role: str = "a user",
+                      minutes: int = 10, actor: str | None = None,
+                      timeout_slack: float = 30.0) -> dict:
+    """A guardrail-bounded, timeboxed exploration of an area, as a role. Awaits the
+    session (bounded) and returns it with its findings for an anomaly card."""
+    from urllib.parse import urljoin
+
+    minutes = max(1, min(int(minutes or 10), 15))  # N ≤ 15, default 10
+    area = area or "/"
+    base = urljoin(journey.target if journey.target.endswith("/") else journey.target + "/",
+                   area.lstrip("/"))
+    guardrails = (journey.guardrails or {}) if journey else {}
+    charter = (f"As {role}, explore {area} for up to {minutes} minute(s). Exercise safe "
+               "controls only; report anomalies (errors, dead ends, slow pages, layout "
+               "breaks, accessibility barriers).")
+    session = await start(
+        db, project_id=project.id, charter=charter, base_url=base,
+        environment=journey.environment if journey else "",
+        max_steps=min(60, minutes * 4), allow_transactional=False,
+        guardrails=guardrails, started_by=actor,
+    )
+    task = _TASKS.get(session.id)
+    timed_out = False
+    if task is not None:
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=minutes * 60 + timeout_slack)
+        except TimeoutError:
+            timed_out = True
+    db.expire_all()
+    session = db.get(ExplorationSession, session.id)
+    return {"session": session, "findings": findings_for(db, session.id),
+            "timed_out": timed_out, "role": role, "area": area, "minutes": minutes}
+
+
+def _finding_dict(f: ExplorationFinding) -> dict:
+    return {
+        "id": f.id, "kind": f.kind, "severity": f.severity, "title": f.title,
+        "detail": f.detail, "url": f.url, "confidence": f.confidence,
+        "status": f.status, "promoted_test_id": f.promoted_test_id,
+        "found_by": f.found_by, "signature": f.signature,
+    }
+
+
+def findings_for(db, session_id: str) -> list[dict]:
+    rows = db.execute(
+        select(ExplorationFinding).where(ExplorationFinding.session_id == session_id)
+        .order_by(ExplorationFinding.severity.desc())
+    ).scalars()
+    return [_finding_dict(f) for f in rows]
+
+
+#: Which runner step best re-checks each anomaly kind, so a promoted test actually
+#: guards against the regression rather than just reopening the page.
+def _steps_for_finding(kind: str, url: str) -> list[dict]:
+    from ..models import StepAction
+    goto = {"action": StepAction.GOTO, "intent": f"Open {url}", "value": {"url": url}}
+    if kind in ("dead_end", "broken_link", "server_error"):
+        return [goto]  # the GOTO itself asserts a <400 status in the runner
+    if kind == "accessibility":
+        return [goto, {"action": StepAction.ASSERT_A11Y, "intent": "No serious/critical axe violations",
+                       "value": {"tags": ["wcag2a", "wcag2aa", "wcag22aa"], "fail_on": ["serious", "critical"]}}]
+    if kind == "slow_response":
+        return [goto, {"action": StepAction.ASSERT_PERF, "intent": "Within Core Web Vitals budget",
+                       "value": {"lcp_ms": 2500, "cls": 0.1}}]
+    body = {"action": StepAction.EXPECT_VISIBLE, "intent": "The page still renders",
+            "target": {"ladder": [{"kind": "css", "value": "body"}]}}
+    return [goto, body]
+
+
+def promote_finding(db, *, project_id: str, finding_id: str, journey=None,
+                    actor: str | None = None) -> dict:
+    """Turn an exploratory finding into a proposed TestCase, so a one-off
+    observation becomes a guarded, re-runnable check."""
+    from ..models import Project, TestCase, TestCategory, TestStatus, TestStep
+
+    finding = db.get(ExplorationFinding, finding_id)
+    if finding is None or finding.project_id != project_id:
+        return {"ok": False, "error": "no such finding"}
+    if finding.promoted_test_id:
+        return {"ok": True, "already": True, "test_id": finding.promoted_test_id}
+
+    project = db.get(Project, project_id)
+    key = f"{project.key}-EXP-{finding.id[:6].upper()}"
+    steps = _steps_for_finding(finding.kind, finding.url or (journey.target if journey else ""))
+    tc = TestCase(
+        project_id=project_id, key=key,
+        title=(finding.title or f"Exploratory: {finding.kind}")[:400],
+        description=finding.detail[:2000],
+        status=TestStatus.PROPOSED, category=TestCategory.AUTOMATED,
+        tags=["exploratory", finding.kind],
+        risk=finding.severity if finding.severity in ("high", "medium", "low") else "medium",
+        provenance={"origin": "exploratory", "finding_id": finding.id, "kind": finding.kind,
+                    "session_id": finding.session_id, "deterministic": True},
+    )
+    db.add(tc)
+    db.flush()
+    for i, step in enumerate(steps):
+        db.add(TestStep(test_case_id=tc.id, index=i, action=step["action"],
+                        intent=step.get("intent", ""), value=step.get("value") or {},
+                        target=step.get("target") or {}))
+    finding.status = "promoted"
+    finding.promoted_test_id = tc.id
+    audit.record(db, action="exploration.finding_promoted", actor_id=actor,
+                 project_id=project_id, resource_type="test_case", resource_id=tc.id,
+                 detail={"finding_id": finding.id, "kind": finding.kind, "key": key})
+    db.commit()
+    return {"ok": True, "test_id": tc.id, "key": key, "kind": finding.kind}
+
+
+def sessions_for_journey(db, project_id: str, target: str, limit: int = 5) -> list[dict]:
+    """Recent exploration sessions against a target, with their findings, for the
+    run report's Exploratory section."""
+    from .onramp import normalize_url
+    base = normalize_url(target)
+    rows = db.execute(
+        select(ExplorationSession).where(
+            ExplorationSession.project_id == project_id,
+            ExplorationSession.base_url.like(f"{base.rstrip('/')}%"),
+        ).order_by(ExplorationSession.created_at.desc()).limit(limit)
+    ).scalars()
+    out = []
+    for s in rows:
+        out.append({"id": s.id, "charter": s.charter, "status": s.status,
+                    "summary": s.summary, "screens_seen": s.screens_seen,
+                    "steps_taken": s.steps_taken, "findings": findings_for(db, s.id)})
+    return out
 
 
 def active() -> list[str]:

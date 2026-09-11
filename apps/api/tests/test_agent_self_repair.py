@@ -1,5 +1,5 @@
 """Agent self-repair: a failed tool hands the model its recovery hint, and a
-repeated identical failure earns an escalating instruction — so the loop adapts
+repeated identical failure earns an escalating instruction, so the loop adapts
 instead of looping on a broken call.
 """
 
@@ -7,11 +7,8 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-from galeqea.ai.agent import _call_signature, _repair_note, _tool_result_for_model
-from galeqea.ai.agent import Agent
-from galeqea.ai.providers.base import Completion, LLMProvider, Role, Usage
+from galeqea.ai.agent import Agent, _call_signature, _repair_note, _tool_result_for_model
+from galeqea.ai.providers.base import Completion, LLMProvider, Role
 from galeqea.ai.tools import ToolContext, ToolRegistry
 
 

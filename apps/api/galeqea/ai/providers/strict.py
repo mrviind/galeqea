@@ -3,14 +3,14 @@
 `strict: true` constrains the model's sampling to schema-valid output, which
 eliminates the whole class of "passengers": "two" failures. It comes with a
 supported JSON Schema subset, and a schema outside that subset is rejected by
-the API rather than degraded — so the conversion has to be done here, once, and
+the API rather than degraded, so the conversion has to be done here, once, and
 has to say honestly when a schema cannot be made strict at all.
 
 The rules, from the structured-outputs documentation:
 
 * every object must carry ``additionalProperties: false``;
 * ``minimum`` / ``maximum`` / ``multipleOf`` / ``minLength`` / ``maxLength`` /
-  ``pattern`` are unsupported — the SDK's own approach is to drop them from the
+  ``pattern`` are unsupported: the SDK's own approach is to drop them from the
   wire schema, fold them into the description, and validate locally afterwards,
   which is what this does;
 * ``minItems`` may only be 0 or 1;
@@ -18,7 +18,7 @@ The rules, from the structured-outputs documentation:
 * ``$ref`` must be local; recursion is unsupported.
 
 A schema that declares ``additionalProperties: true`` is a *free-form* object by
-contract — a locator ladder, a step's ``value`` bag — and forcing it closed would
+contract (a locator ladder, a step's ``value`` bag), and forcing it closed would
 change what the tool accepts. Those tools stay non-strict, and the registry's
 own argument validation covers them instead.
 """

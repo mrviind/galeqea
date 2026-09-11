@@ -20,8 +20,20 @@ PROVIDER_SPECS: dict[str, dict] = {
     "jira": {
         "label": "Jira Cloud",
         "config": ["base_url", "email", "project_key"],
+        "optional": ["defect_project_key"],
         "secrets": ["api_token"],
-        "help": "Create an API token at id.atlassian.com → Security → API tokens.",
+        "help": ("Create an API token at id.atlassian.com → Security → API tokens. "
+                 "project_key is the default project for imports; defect_project_key "
+                 "(optional) files bugs into a different project."),
+    },
+    "confluence": {
+        "label": "Confluence Cloud",
+        "config": ["base_url", "email", "space_key"],
+        "optional": ["parent_id"],
+        "secrets": ["api_token"],
+        "help": ("Same Atlassian API token as Jira. base_url is your site "
+                 "(https://your-site.atlassian.net); space_key is where release reports "
+                 "are published; parent_id (optional) is the page they hang under."),
     },
     "xray": {
         "label": "Xray Cloud",
@@ -44,9 +56,18 @@ PROVIDER_SPECS: dict[str, dict] = {
     "testrail": {
         "label": "TestRail",
         "config": ["base_url", "username", "section_id"],
+        "optional": ["project_id"],
         "secrets": ["api_key"],
-        "help": "My Settings → API Keys. section_id is the suite section cases land in.",
+        "help": ("My Settings → API Keys. section_id is the suite section cases land in; "
+                 "project_id (optional) is where pushed result runs are created."),
     },
+    "slack": {"label": "Slack", "config": [], "optional": ["events", "only_failures"],
+              "secrets": ["webhook_url"],
+              "help": ("Create an Incoming Webhook in your Slack workspace and paste its URL. "
+                       "Choose which events post; 'notify slack on failures' narrows it to red runs.")},
+    "teams": {"label": "Microsoft Teams", "config": [], "optional": ["events", "only_failures"],
+              "secrets": ["webhook_url"],
+              "help": "Add an Incoming Webhook connector to a Teams channel and paste its URL."},
     "github": {"label": "GitHub", "config": ["repo"], "secrets": ["token"],
                "help": "A fine-grained PAT with Contents and Pull requests write access."},
     "gitlab": {"label": "GitLab", "config": ["base_url", "project_id"], "secrets": ["token"],
@@ -160,11 +181,11 @@ def verify(
     project: Project = Depends(get_project),
     db: Session = Depends(get_db),
 ):
-    verifiers = {}
-    from ...integrations import jira, xray
+    from ...integrations import confluence, jira, testrail, xray, zephyr
 
-    verifiers["jira"] = jira.verify
-    verifiers["xray"] = xray.verify
+    verifiers = {"jira": jira.verify, "xray": xray.verify,
+                 "zephyr_scale": zephyr.verify, "testrail": testrail.verify,
+                 "confluence": confluence.verify}
     fn = verifiers.get(provider)
     if fn is None:
         raise HTTPException(400, f"verification is not implemented for {provider!r}")
@@ -190,6 +211,70 @@ def verify(
             connection.last_checked_at = utcnow()
             db.commit()
         raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/{provider}/test")
+def test_notification(provider: str, project: Project = Depends(get_project),
+                      db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Send a one-off test message to a Slack/Teams target."""
+    if provider not in ("slack", "teams"):
+        raise HTTPException(400, "only slack and teams support a test message")
+    if not user.at_least(Role.AUTHOR):
+        raise HTTPException(403, "requires the author role")
+    from ...services import notify
+    try:
+        return notify.send_test(db, project_id=project.id, provider=provider)
+    except IntegrationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.patch("/{provider}/events")
+def set_notification_events(provider: str, payload: dict, project: Project = Depends(get_project),
+                            db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Choose which events a Slack/Teams target posts."""
+    if not user.at_least(Role.AUTHOR):
+        raise HTTPException(403, "requires the author role")
+    from ...services import notify
+    try:
+        out = notify.set_events(db, project_id=project.id, provider=provider,
+                                events=payload.get("events"),
+                                only_failures=payload.get("only_failures"))
+    except IntegrationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    db.commit()
+    return out
+
+
+@router.post("/jira/import")
+def jira_import(payload: dict, project: Project = Depends(get_project),
+                db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Import Jira stories as requirements. author+; the generated tests are what the
+    review gate governs."""
+    if not user.at_least(Role.AUTHOR):
+        raise HTTPException(403, "importing requires the author role")
+    from ...services import story_import
+    try:
+        out = story_import.import_stories(db, project, selector=payload.get("selector", ""),
+                                          actor=user)
+    except story_import.StoryImportError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    db.commit()
+    return out
+
+
+@router.post("/jira/stale")
+def jira_stale(project: Project = Depends(get_project), db: Session = Depends(get_db),
+               user: User = Depends(current_user)):
+    """Re-check imported stories against Jira and flag the ones whose description changed."""
+    if not user.at_least(Role.AUTHOR):
+        raise HTTPException(403, "requires the author role")
+    from ...services import story_import
+    try:
+        out = story_import.detect_stale(db, project)
+    except story_import.StoryImportError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    db.commit()
+    return out
 
 
 @router.post("/ci/report")

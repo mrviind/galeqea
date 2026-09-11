@@ -357,7 +357,7 @@ def build_proposal(
         # Said plainly rather than papered over with an invented assertion: a
         # test that only clicks passes as long as nothing throws.
         rationale += (
-            " No assertions were captured — this test proves the flow completes without "
+            " No assertions were captured, so this test proves the flow completes without "
             "an error, not that it produced the right result. Alt+click during recording, "
             "or add expectations before approving."
         )

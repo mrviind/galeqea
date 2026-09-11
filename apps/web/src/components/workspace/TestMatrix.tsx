@@ -12,8 +12,8 @@ const MOCK_RUN: { level: 'info' | 'pass' | 'fail' | 'warn'; text: string; delay:
   { level: 'pass', text: 'browser.newContext()', delay: 260 },
   { level: 'pass', text: "page.goto('/checkout')", delay: 340 },
   { level: 'pass', text: "getByLabel('Email address').fill('ravi@example.com')", delay: 300 },
-  { level: 'warn', text: "locator resolved on fallback rung 2 — primary testid missing", delay: 220 },
-  { level: 'fail', text: "locator('#checkout').click() — Timeout 30000ms exceeded", delay: 380 },
+  { level: 'warn', text: "locator resolved on fallback rung 2: primary testid missing", delay: 220 },
+  { level: 'fail', text: "locator('#checkout').click(): Timeout 30000ms exceeded", delay: 380 },
   { level: 'info', text: '  waiting for locator(\'#checkout\')', delay: 90 },
   { level: 'info', text: '  1 test failed, 0 passed (2.1s)', delay: 140 },
 ];
@@ -45,7 +45,7 @@ export function TestMatrix() {
     if (!activeTestScript || running) return;
     // One clock for the whole run, started before the wait. Timing the loop
     // separately and adding the pre-roll back on afterwards gives the same
-    // answer only when nothing else delays it — and browsers throttle timers in
+    // answer only when nothing else delays it, and browsers throttle timers in
     // a background tab, so the two diverge exactly when someone switches away.
     const started = Date.now();
     beginRun(activeTestScript.files[0]?.filename ?? activeTestScript.title);
@@ -75,7 +75,7 @@ export function TestMatrix() {
       <EmptyPane
         icon={<Grid3x3 size={11} />}
         title="No script generated"
-        body="Give the Copilot a Gherkin scenario and the generated spec and page object appear here. Locators the scenario does not pin down arrive as TODOs — they are never guessed."
+        body="Give QE Agent a Gherkin scenario and the generated spec and page object appear here. Locators the scenario does not pin down arrive as TODOs. They are never guessed."
       />
     );
   }
@@ -99,7 +99,7 @@ export function TestMatrix() {
             'ml-auto flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition',
             running
               ? 'border-line bg-surface-2 text-ink-3'
-              : 'border-transparent bg-ink text-canvas hover:bg-white',
+              : 'border-transparent bg-ink text-canvas hover:opacity-90',
           )}
         >
           {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
@@ -203,10 +203,10 @@ function PlanView() {
 
         <p className="mt-4 text-[11.5px] leading-relaxed text-ink-3">
           {unknown
-            ? 'One or more steps name a tool that does not exist — ask the Copilot to revise the plan.'
+            ? 'One or more steps name a tool that does not exist. Ask QE Agent to revise the plan.'
             : activePlan.writesState
-              ? 'The write steps will each still ask for your approval as they run. Tell the Copilot to proceed, or adjust the plan first.'
-              : 'This plan only reads. Tell the Copilot to proceed when you are ready.'}
+              ? 'The write steps will each still ask for your approval as they run. Tell QE Agent to proceed, or adjust the plan first.'
+              : 'This plan only reads. Tell QE Agent to proceed when you are ready.'}
         </p>
       </div>
     </div>

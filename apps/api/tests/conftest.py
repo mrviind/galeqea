@@ -7,7 +7,30 @@ import pytest
 # A fresh home per session so tests never touch a developer's real install.
 _TMP = tempfile.mkdtemp(prefix="galeqea-tests-")
 os.environ["GALEQEA_HOME"] = _TMP
-os.environ["GALEQEA_DATABASE_URL"] = f"sqlite:///{Path(_TMP) / 'test.db'}"
+# Default to an isolated temp SQLite DB. CI overrides GALEQEA_DATABASE_URL to point
+# at a throwaway Postgres so the same suite runs on both dialects; we honour a
+# preset URL as long as it clearly isn't a developer's real install.
+_PRESET_DB = os.environ.get("GALEQEA_DATABASE_URL", "")
+if not _PRESET_DB or _PRESET_DB.startswith("sqlite"):
+    os.environ["GALEQEA_DATABASE_URL"] = f"sqlite:///{Path(_TMP) / 'test.db'}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _enforce_db_isolation():
+    """Fail the whole suite loudly if it resolved to a real install rather than
+    the temp home: isolation by convention becomes isolation by assertion, so a
+    stray ``~/.galeqea`` write (the source of junk approvals) can't slip in."""
+    from galeqea.config import settings
+
+    assert str(settings.home).startswith(_TMP), (
+        f"tests must run against the isolated temp home, not {settings.home}")
+    if settings.database_url.startswith("sqlite"):
+        assert _TMP in settings.database_url, (
+            f"the test DB must live under the temp home, not {settings.database_url}")
+    else:
+        # A CI Postgres URL is allowed, but never a developer's real install.
+        assert ".galeqea" not in settings.database_url, "refusing to run tests against a real DB"
+    yield
 
 
 @pytest.fixture()

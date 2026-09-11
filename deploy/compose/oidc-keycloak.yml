@@ -1,0 +1,50 @@
+# Dev/test OIDC single sign-on with Keycloak (Apache-2.0).
+#
+#   docker compose -f deploy/compose/oidc-keycloak.yml up
+#
+# Keycloak imports the `galeqea` realm (client + a `galeqea-admins` group + a test
+# user `tester` / `tester-pass`). GaleQEA is wired to it and shows "Sign in with
+# SSO". The realm's redirect URIs and the issuer use `host.docker.internal` so the
+# browser and the app agree on Keycloak's address; on Linux the `extra_hosts` line
+# maps it to the host gateway.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm", "--hostname-strict=false"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./keycloak/galeqea-realm.json:/opt/keycloak/data/import/galeqea-realm.json:ro
+
+  galeqea:
+    # Always builds from the checkout (run `docker compose -f … up --build`), so a
+    # clean clone gets current code. Published on :8098 to avoid colliding with a
+    # dev server on :8080.
+    build: ../..
+    depends_on:
+      - keycloak
+    ports:
+      - "8098:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux; Docker Desktop provides it already
+    environment:
+      GALEQEA_HOME: /data
+      GALEQEA_HOST: 0.0.0.0
+      GALEQEA_SINGLE_USER_MODE: "false"
+      GALEQEA_ADMIN_EMAIL: admin@corp.io
+      GALEQEA_ADMIN_PASSWORD: change-me-now
+      # The issuer must be reachable by BOTH the app (token exchange) and the
+      # browser (redirect) at the same URL, hence host.docker.internal:8088.
+      GALEQEA_AUTH_OIDC_ISSUER: http://host.docker.internal:8088/realms/galeqea
+      GALEQEA_AUTH_OIDC_CLIENT_ID: galeqea
+      GALEQEA_AUTH_OIDC_CLIENT_SECRET: galeqea-oidc-secret
+      GALEQEA_AUTH_OIDC_ROLE_MAP: '{"galeqea-admins":"admin"}'
+      GALEQEA_AUTH_OIDC_REDIRECT_BASE: http://localhost:8098
+    volumes:
+      - galeqea-oidc-data:/data
+
+volumes:
+  galeqea-oidc-data:

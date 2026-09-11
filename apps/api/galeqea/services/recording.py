@@ -57,8 +57,8 @@ async def start(
     target = start_url or base_url
     if not target:
         raise ValueError(
-            f"environment {env!r} has no URL configured and no start URL was given — "
-            "recording needs somewhere to open"
+            f"environment {env!r} has no URL configured and no start URL was given. "
+            "Recording needs somewhere to open"
         )
 
     session = RecordingSession(

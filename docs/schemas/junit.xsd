@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  JUnit report schema for GaleQEA's run.junit.xml rendering. A pragmatic subset of
+  the widely-used Jenkins/surefire JUnit schema, enough to validate what GaleQEA
+  emits and what CI systems read: <testsuites> of <testsuite> (one per test type),
+  each holding <properties> and <testcase> elements with <failure>/<skipped> and
+  <system-out>.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+
+  <xs:element name="testsuites" type="testsuitesType"/>
+
+  <xs:complexType name="testsuitesType">
+    <xs:sequence>
+      <xs:element name="testsuite" type="testsuiteType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="optional"/>
+    <xs:attribute name="tests" type="xs:integer" use="optional"/>
+    <xs:attribute name="failures" type="xs:integer" use="optional"/>
+    <xs:attribute name="skipped" type="xs:integer" use="optional"/>
+    <xs:attribute name="errors" type="xs:integer" use="optional"/>
+    <xs:attribute name="time" type="xs:decimal" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="testsuiteType">
+    <xs:sequence>
+      <xs:element name="properties" type="propertiesType" minOccurs="0"/>
+      <xs:element name="testcase" type="testcaseType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="tests" type="xs:integer" use="optional"/>
+    <xs:attribute name="failures" type="xs:integer" use="optional"/>
+    <xs:attribute name="skipped" type="xs:integer" use="optional"/>
+    <xs:attribute name="errors" type="xs:integer" use="optional"/>
+    <xs:attribute name="time" type="xs:decimal" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="propertiesType">
+    <xs:sequence>
+      <xs:element name="property" type="propertyType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="propertyType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="value" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="testcaseType">
+    <xs:sequence>
+      <xs:element name="property" type="propertyType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:choice minOccurs="0">
+        <xs:element name="failure" type="failureType"/>
+        <xs:element name="skipped" type="skippedType"/>
+        <xs:element name="error" type="failureType"/>
+      </xs:choice>
+      <xs:element name="system-out" type="xs:string" minOccurs="0"/>
+      <xs:element name="system-err" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="classname" type="xs:string" use="optional"/>
+    <xs:attribute name="time" type="xs:decimal" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="failureType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="message" type="xs:string" use="optional"/>
+        <xs:attribute name="type" type="xs:string" use="optional"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="skippedType">
+    <xs:attribute name="message" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+</xs:schema>

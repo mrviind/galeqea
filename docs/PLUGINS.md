@@ -34,7 +34,7 @@ class SlackReporter(Reporter):
     def on_run_finished(self, run, results, ctx):
         failed = [r for r in results if r["status"] in ("failed", "error")]
         self.http.post(WEBHOOK, json={
-            "text": f"Run #{run['number']}: {run['status']} — {len(failed)} failure(s)"
+            "text": f"Run #{run['number']}: {run['status']}, {len(failed)} failure(s)"
         })
 
 plugin = SlackReporter   # a class, an instance, or a zero-argument factory
@@ -57,7 +57,7 @@ cannot grant a capability the manifest never requested.
 | `read:tests` | read test cases and their steps |
 | `read:runs` | read runs and results |
 | `read:requirements` | read ingested requirements |
-| `write:proposals` | propose changes — still subject to the human gate |
+| `write:proposals` | propose changes, still subject to the human gate |
 | `network:outbound` | make outbound HTTP requests |
 | `fs:artifacts` | read artifact files produced by runs |
 | `ui:panel` | contribute a panel to the web UI |
@@ -68,7 +68,7 @@ granted is **absent**, not merely discouraged.
 ## Sandboxing: an honest limitation
 
 The sandbox constrains what a *cooperative* plugin can reach and makes an
-*uncooperative* one obvious. In-process Python cannot be a true security boundary —
+*uncooperative* one obvious. In-process Python cannot be a true security boundary;
 a determined plugin can import whatever it likes. GaleQEA therefore:
 
 - installs plugins disabled, with no capabilities;
@@ -83,5 +83,5 @@ and is not yet implemented.
 ## Hot reload
 
 Re-running `galeqea plugins --install` on a changed directory updates the record.
-The next `load()` re-imports the module — but if the checksum changed, the plugin is
+The next `load()` re-imports the module, but if the checksum changed, the plugin is
 disabled until an admin re-grants.

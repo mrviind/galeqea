@@ -1,6 +1,6 @@
 """Ask-then-use: let the chat request one missing input and consume the reply.
 
-The agent often needs a single fact before it can act — most commonly *which URL
+The agent often needs a single fact before it can act, most commonly *which URL
 to test*. Rather than fail with "I need a URL", it asks, remembers what it was
 waiting for on the conversation, and treats the user's next message as the answer.
 
@@ -8,7 +8,7 @@ This is the conversational form of **slot filling**: name the one thing that is
 missing, ask only for that, keep the rest of the request intact, and let a direct
 answer fill the slot. It is the same shape as :mod:`plan_gate` (a small piece of
 state on ``ChatSession.context`` that changes how the *next* message is read), and
-like it, it needs no model — so the on-ramp works in No-AI mode.
+like it, it needs no model, so the on-ramp works in No-AI mode.
 
 A pending prompt is single-turn: the next message either fills it or replaces it.
 A message that is clearly a change of subject (or an explicit cancel) drops the

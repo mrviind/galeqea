@@ -14,8 +14,8 @@ import { useApp } from '../../state';
  * time and writes the use into the audit ledger.
  *
  * A model the vault cannot reach is shown disabled with the reason, not hidden.
- * Silently omitting it produces the worst support ticket there is — "the model I
- * pay for isn't in the list" — when the answer is simply that nobody has added
+ * Silently omitting it produces the worst support ticket there is: "the model I
+ * pay for isn't in the list", when the answer is simply that nobody has added
  * the key yet.
  */
 
@@ -80,7 +80,7 @@ export function ModelSelector({
       >
         {!aiEnabled && <TriangleAlert size={11} className="shrink-0 text-flaky" />}
         <span className="truncate">
-          {!aiEnabled ? 'No-AI mode' : (current?.label ?? value?.model ?? 'Choose a model')}
+          {!aiEnabled ? 'Connect a model' : (current?.label ?? value?.model ?? 'Choose a model')}
         </span>
         <ChevronDown size={11} className="shrink-0 text-ink-3" />
       </button>
@@ -137,7 +137,7 @@ export function ModelSelector({
 
           {models.length === 0 && (
             <p className="px-2.5 py-3 text-[11px] leading-relaxed text-ink-3">
-              No providers are credentialed. Add a key in Settings — it is sealed in the
+              No providers are credentialed. Add a key in Settings. It is sealed in the
               vault on this server, never sent to the browser.
             </p>
           )}

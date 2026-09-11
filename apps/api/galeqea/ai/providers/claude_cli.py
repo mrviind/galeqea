@@ -74,7 +74,7 @@ class ClaudeCLIProvider(LLMProvider):
             raise ProviderError(
                 "the Bring-Your-Own-Agent bridge only runs on a loopback-bound "
                 f"server (host is {settings.host!r}). A hosted GaleQEA must not "
-                "drive a user's local Claude subscription - configure an API key "
+                "drive a user's local coding-agent CLI - configure an API key "
                 "provider for server deployments."
             )
 

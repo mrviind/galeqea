@@ -110,7 +110,39 @@ def record(
     )
     db.add(entry)
     db.flush()
+    _emit_siem(entry)
     return entry
+
+
+def _emit_siem(entry: AuditEvent) -> None:
+    """Optionally mirror the ledger entry as a single JSON line on stdout, for a SIEM
+    collector to tail. Best-effort: a logging sink must never break an audited write."""
+    from ..config import settings
+
+    if not getattr(settings, "audit_siem", False):
+        return
+    import json
+    import sys
+
+    try:
+        line = json.dumps({
+            "event": "audit",
+            "seq": entry.seq,
+            "at": entry.created_at.isoformat() if entry.created_at else None,
+            "action": entry.action,
+            "actor_id": entry.actor_id,
+            "actor_kind": entry.actor_kind,
+            "actor": entry.actor_label,
+            "project_id": entry.project_id,
+            "resource_type": entry.resource_type,
+            "resource_id": entry.resource_id,
+            "outcome": entry.outcome,
+            "approval_id": entry.approval_id,
+            "entry_hash": entry.entry_hash,
+        }, default=str)
+        print(line, file=sys.stdout, flush=True)
+    except Exception:  # noqa: BLE001 - never let the SIEM sink break an audit write
+        pass
 
 
 @dataclass(slots=True)

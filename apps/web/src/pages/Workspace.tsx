@@ -7,7 +7,7 @@ import { RequirementsViewer } from '../components/workspace/RequirementsViewer';
 import { TestMatrix } from '../components/workspace/TestMatrix';
 
 /**
- * The QA Grid — the left canvas of the workspace.
+ * The QA Grid: the left canvas of the workspace.
  *
  * Tabs rather than routes on purpose. These three viewers are facets of one
  * investigation: a requirement, the scenarios covering it, and why one of them

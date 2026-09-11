@@ -1,11 +1,46 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import clsx from 'clsx';
-import { AlertTriangle, FileUp, HelpCircle, Sparkles, Upload } from 'lucide-react';
+import { AlertTriangle, Download, FileUp, HelpCircle, PlayCircle, Sparkles, Upload } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Coverage } from '../lib/api';
 import { RISK_COLOR } from '../lib/format';
 import { useApp } from '../state';
 import { Button, Chip, Empty, Meter, Panel, SectionTitle, Spinner } from '../components/primitives';
+import { BandRow, InfoPopover } from '../components/ui/InfoPopover';
+
+type Band = { label: string; tone: 'pass' | 'flaky' | 'fail' };
+
+/** Coverage and automation are both "more is better" percentages, so the same
+ *  three bands apply to each: strong / improving / needs work. */
+function bandFor(pct: number): Band {
+  if (pct >= 80) return { label: 'Strong', tone: 'pass' };
+  if (pct >= 40) return { label: 'Improving', tone: 'flaky' };
+  return { label: 'Needs work', tone: 'fail' };
+}
+
+const CHIP_TONE: Record<Band['tone'], 'good' | 'warn' | 'danger'> = {
+  pass: 'good', flaky: 'warn', fail: 'danger',
+};
+
+const RISK_TIER_STYLE: Record<string, string> = {
+  critical: 'border-fail/30 bg-fail/[0.06]',
+  high: 'border-flaky/30 bg-flaky/[0.06]',
+  medium: 'border-line-strong bg-surface-3',
+  low: 'border-line bg-surface-3',
+};
+
+async function downloadBlob(url: string, filename: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`download failed: ${res.status}`);
+  const objectUrl = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
 
 export default function Requirements() {
   const { project, refreshOverview } = useApp();
@@ -14,6 +49,8 @@ export default function Requirements() {
   const [matrix, setMatrix] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [sampling, setSampling] = useState(false);
+  const [floorResult, setFloorResult] = useState<any | null>(null);
   const [notice, setNotice] = useState<string>('');
   const [injection, setInjection] = useState<any | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -39,7 +76,7 @@ export default function Requirements() {
       const result = await api.upload<any>(`/api/projects/${project.id}/requirements/upload`, form);
       const s = result.summary ?? {};
       setNotice(
-        `Extracted ${s.count ?? 0} requirement(s) — ${s.open_questions ?? 0} open question(s), ` +
+        `Extracted ${s.count ?? 0} requirement(s): ${s.open_questions ?? 0} open question(s), ` +
         `${s.inferred_refs ?? 0} inferred reference(s).` +
         (result.warnings?.length ? ` ${result.warnings.join(' ')}` : ''),
       );
@@ -59,6 +96,32 @@ export default function Requirements() {
       await load();
       void refreshOverview();
     } finally { setGenerating(false); }
+  };
+
+  const downloadTemplate = () => {
+    if (!project) return;
+    void downloadBlob(`/api/projects/${project.id}/requirements/template`, 'sample-requirements.md');
+  };
+
+  const runSampleFloor = async () => {
+    if (!project) return;
+    setSampling(true); setNotice(''); setFloorResult(null);
+    try {
+      const result = await api.post<any>(`/api/projects/${project.id}/requirements/sample`, { run: true });
+      if (result.ok === false) {
+        setNotice(result.error || 'the sample run could not complete');
+      } else {
+        setFloorResult(result);
+        setNotice(
+          `Sample floor complete: ${result.requirements?.cases_generated ?? 0} requirement-derived ` +
+          `case(s), run #${result.run_number} (${result.status}). Reports are ready below.`,
+        );
+      }
+      await load();
+      void refreshOverview();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'the sample run failed');
+    } finally { setSampling(false); }
   };
 
   return (
@@ -98,7 +161,30 @@ export default function Requirements() {
           </Button>
         </div>
 
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
+          <p className="text-[11px] text-ink-3">
+            New here? Try the bundled sample spec (no writing required):
+          </p>
+          <Button onClick={downloadTemplate}>
+            <Download size={12} /> Download the template
+          </Button>
+          <Button variant="primary" onClick={runSampleFloor} disabled={sampling}>
+            {sampling ? <Spinner /> : <PlayCircle size={13} />}
+            {sampling ? 'Running the full floor…' : 'Run the full floor with the sample'}
+          </Button>
+        </div>
+
         {notice && <p className="mt-2 text-[11.5px] text-ink-2">{notice}</p>}
+
+        {floorResult?.reports && (
+          <div className="rounded-lg mt-2 flex flex-wrap items-center gap-3 border border-line bg-surface-2 p-2.5 text-[11.5px]">
+            <span className="font-medium text-ink">Sample floor reports:</span>
+            <a className="text-accent hover:underline" href={floorResult.reports.test_plan_docx} target="_blank" rel="noreferrer">Test Plan (Word)</a>
+            <a className="text-accent hover:underline" href={floorResult.reports.docx} target="_blank" rel="noreferrer">Completion Report (Word)</a>
+            <a className="text-accent hover:underline" href={floorResult.reports.xlsx} target="_blank" rel="noreferrer">Completion Report (Excel)</a>
+            <a className="text-accent hover:underline" href={floorResult.reports.xlsx_rtm} target="_blank" rel="noreferrer">Traceability (Excel)</a>
+          </div>
+        )}
 
         {injection && (
           <div className="rounded-lg mt-2 border border-fail/30 bg-fail/[0.07] p-2.5">
@@ -107,7 +193,7 @@ export default function Requirements() {
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-ink-2">
               It was treated strictly as data and never as a command. Nothing was silently
-              removed — review these passages before trusting the document.
+              removed. Review these passages before trusting the document.
             </p>
             <ul className="mt-1.5 space-y-1">
               {(injection.findings ?? []).map((f: any, i: number) => (
@@ -127,24 +213,35 @@ export default function Requirements() {
             <SectionTitle hint="gaps first">Coverage</SectionTitle>
             <div className="space-y-3 px-4 pb-3">
               <p className="text-[12.5px] leading-relaxed text-ink-2">{coverage.headline}</p>
-              <div>
-                <div className="flex justify-between text-[11px] text-ink-3">
-                  <span>Covered</span><span className="mono">{coverage.coverage_pct}%</span>
-                </div>
-                <Meter value={coverage.coverage_pct} tone="pass" className="mt-1" />
-              </div>
-              <div>
-                <div className="flex justify-between text-[11px] text-ink-3">
-                  <span>Automated</span><span className="mono">{coverage.automation_pct}%</span>
-                </div>
-                <Meter value={coverage.automation_pct} className="mt-1" />
+
+              <div className="grid grid-cols-2 gap-2">
+                <MetricCard
+                  label="Covered" pct={coverage.coverage_pct}
+                  legend={<>
+                    <BandRow tone="pass" label="Strong" range="≥ 80%" />
+                    <BandRow tone="flaky" label="Improving" range="40–79%" />
+                    <BandRow tone="fail" label="Needs work" range="< 40%" />
+                  </>}
+                />
+                <MetricCard
+                  label="Automated" pct={coverage.automation_pct}
+                  legend={<>
+                    <BandRow tone="pass" label="Strong" range="≥ 80%" />
+                    <BandRow tone="flaky" label="Improving" range="40–79%" />
+                    <BandRow tone="fail" label="Needs work" range="< 40%" />
+                    <p className="pt-1 text-ink-3">Automated = has a runnable, approved test.</p>
+                  </>}
+                />
               </div>
 
               <div className="grid grid-cols-4 gap-1.5">
                 {Object.entries(coverage.by_risk ?? {}).map(([risk, data]: any) => (
-                  <div key={risk} className="rounded-lg border border-line bg-surface-2 p-1.5 text-center">
-                    <p className="text-[10px] capitalize text-ink-3">{risk}</p>
-                    <p className="mono text-[12px] text-ink">{data.covered}/{data.total}</p>
+                  <div
+                    key={risk}
+                    className={clsx('rounded-lg border p-1.5 text-center', RISK_TIER_STYLE[risk] ?? RISK_TIER_STYLE.medium)}
+                  >
+                    <p className="truncate text-[10px] capitalize text-ink-3">{risk}</p>
+                    <p className="mono text-[12px] font-semibold text-ink">{data.covered}/{data.total}</p>
                   </div>
                 ))}
               </div>
@@ -236,6 +333,29 @@ export default function Requirements() {
           </Panel>
         </div>
       )}
+    </div>
+  );
+}
+
+/** A headline percentage as its own card: big number, a status word instead of
+ *  a bare figure, and an (i) explaining the bands behind that word. The same
+ *  shape as a metric card in a call-analytics dashboard (latency, CSAT, ...),
+ *  applied to a coverage number instead. */
+function MetricCard({ label, pct, legend }: {
+  label: string; pct: number; legend: ReactNode;
+}) {
+  const status = bandFor(pct);
+  return (
+    <div className="rounded-lg border border-line bg-surface-2 p-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-ink-3">{label}</span>
+        <InfoPopover label={`What counts as ${label.toLowerCase()}?`}>{legend}</InfoPopover>
+      </div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="text-2xl font-bold tabular-nums text-ink">{pct}%</span>
+        <Chip tone={CHIP_TONE[status.tone]}>{status.label}</Chip>
+      </div>
+      <Meter value={pct} tone={status.tone === 'pass' ? 'pass' : status.tone === 'fail' ? 'fail' : 'flaky'} className="mt-2" />
     </div>
   );
 }

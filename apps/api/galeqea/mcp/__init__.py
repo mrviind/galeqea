@@ -12,7 +12,7 @@ the chat but not over MCP, or carry annotations the gate never sees, and the two
 would drift the first time someone added a tool to whichever one they happened to
 be looking at. So the tools here *register into* the canonical registry, and gain
 schema validation, the approval gate, MCP exposure and both provider adapters by
-doing so — none of which is reimplemented here.
+doing so, none of which is reimplemented here.
 
 Importing this package is what installs the pack.
 """

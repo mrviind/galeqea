@@ -1,4 +1,4 @@
-# GaleQEA — development and deployment tasks.
+# GaleQEA: development and deployment tasks.
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 PY := .venv/bin/python
@@ -13,7 +13,7 @@ help: ## Show this help
 setup: ## One-time setup: Python deps, Node deps, browsers, UI build
 	python3 -m venv .venv
 	$(PIP) install -q --upgrade pip
-	$(PIP) install -q -e "apps/api[dev]"
+	$(PIP) install -q -e "apps/api[dev,postgres]"
 	cd apps/runner && npm install && npx playwright install chromium
 	cd apps/web && npm install && npm run build
 	@echo ""
@@ -59,6 +59,34 @@ mcp: ## Run the MCP server over stdio
 demo: ## Serve the bundled demo application under test on :8765
 	cd examples/demo-app && python3 -m http.server 8765
 
+.PHONY: a11y
+a11y: ## Run axe over GaleQEA's own pages (needs the app running on :8080)
+	cd apps/runner && node a11y.mjs
+
+.PHONY: bundle
+bundle: ## Check the web UI's initial JS stays under the gzip budget (after `make build`)
+	cd apps/web && node scripts/check-bundle.mjs
+
+.PHONY: hero
+hero: ## Re-record the landing-site hero from a running GaleQEA (needs the app + demo running)
+	npm --prefix apps/runner exec playwright install chromium >/dev/null 2>&1 || true
+	cd apps/runner && node ../../docs/site/scripts/record-hero.mjs
+
+.PHONY: site
+site: ## Preview the static landing site locally on :4321
+	cd docs/site && python3 -m http.server 4321
+
+.PHONY: site-audit
+site-audit: ## Lighthouse the landing site (desktop + mobile), needs `make site` running on :4321
+	cd apps/runner && CHROME_PATH="$$(node -e "console.log(require('playwright').chromium.executablePath())")" \
+	  npx --yes lighthouse@12 http://localhost:4321/ --preset=desktop \
+	  --chrome-flags="--headless=new" --output=json --output-path=/tmp/lh-desktop.json --quiet && \
+	  node -e "const r=require('/tmp/lh-desktop.json').categories;console.log('desktop',Object.fromEntries(Object.entries(r).map(([k,v])=>[k,Math.round(v.score*100)])))"
+	cd apps/runner && CHROME_PATH="$$(node -e "console.log(require('playwright').chromium.executablePath())")" \
+	  npx --yes lighthouse@12 http://localhost:4321/ \
+	  --chrome-flags="--headless=new" --output=json --output-path=/tmp/lh-mobile.json --quiet && \
+	  node -e "const r=require('/tmp/lh-mobile.json').categories;console.log('mobile ',Object.fromEntries(Object.entries(r).map(([k,v])=>[k,Math.round(v.score*100)])))"
+
 .PHONY: docker
 docker: ## Build and start the Docker stack
 	docker compose up --build
@@ -67,3 +95,7 @@ docker: ## Build and start the Docker stack
 clean: ## Remove build artefacts (leaves your GaleQEA data alone)
 	rm -rf apps/web/dist apps/api/.pytest_cache .ruff_cache
 	find . -name __pycache__ -prune -exec rm -rf {} +
+
+.PHONY: bench
+bench: ## Token-efficiency benchmark (WO#8), fails if under target/over budget
+	cd apps/runner && node bench-tokens.mjs

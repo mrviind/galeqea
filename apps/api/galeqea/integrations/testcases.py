@@ -1,7 +1,7 @@
 """Push test cases to external test management systems.
 
 Four targets, four completely different data models. The shared shape below is
-what they agree on — and it is deliberately the IEEE 829 / ISTQB test case
+what they agree on, and it is deliberately the IEEE 829 / ISTQB test case
 structure, because every one of these tools is an implementation of it:
 
     id · title · preconditions · ordered (action, data, expected) steps ·
@@ -9,13 +9,13 @@ structure, because every one of these tools is an implementation of it:
 
 The adapters translate that into each system's own idea of a test case:
 
-* **Xray Cloud** — a Jira *issue* of type Test, created through the GraphQL
+* **Xray Cloud**: a Jira *issue* of type Test, created through the GraphQL
   ``createTest`` mutation with native `steps { action data result }`.
-* **Zephyr Scale** — not a Jira issue: its own object linked to Jira. Created in
+* **Zephyr Scale**: not a Jira issue but its own object linked to Jira. Created in
   two calls, because the API takes the case and its steps separately.
-* **Azure DevOps** — a *work item* of type "Test Case" whose steps live in a
+* **Azure DevOps**: a *work item* of type "Test Case" whose steps live in a
   custom XML blob in ``Microsoft.VSTS.TCM.Steps``.
-* **TestRail** — a case inside a section, steps as ``custom_steps_separated``.
+* **TestRail**: a case inside a section, steps as ``custom_steps_separated``.
 
 Every one of these leaves the building, so every one is behind the approval gate.
 """
@@ -77,7 +77,7 @@ class PortableTestCase:
 
 
 # --------------------------------------------------------------------------- #
-# Xray Cloud — GraphQL createTest
+# Xray Cloud: GraphQL createTest
 # --------------------------------------------------------------------------- #
 CREATE_TEST = """
 mutation CreateTest($testType: UpdateTestTypeInput!, $steps: [CreateStepInput], $jira: JSON!) {
@@ -138,7 +138,7 @@ def push_xray(db: Session, connection: Connection, cases: list[PortableTestCase]
 
 
 # --------------------------------------------------------------------------- #
-# Zephyr Scale — its own object model, linked to Jira
+# Zephyr Scale: its own object model, linked to Jira
 # --------------------------------------------------------------------------- #
 def push_zephyr(db: Session, connection: Connection, cases: list[PortableTestCase]) -> dict:
     base = connection.config.get("base_url", "https://api.zephyrscale.smartbear.com/v2").rstrip("/")
@@ -188,7 +188,7 @@ def _zephyr_priority(priority: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Azure DevOps — a work item whose steps are a custom XML blob
+# Azure DevOps: a work item whose steps are a custom XML blob
 # --------------------------------------------------------------------------- #
 def steps_to_azure_xml(steps: list[Step]) -> str:
     """Render steps into ``Microsoft.VSTS.TCM.Steps``.
@@ -272,7 +272,7 @@ def _azure_priority(priority: str) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# TestRail — a case inside a section
+# TestRail: a case inside a section
 # --------------------------------------------------------------------------- #
 def push_testrail(db: Session, connection: Connection, cases: list[PortableTestCase]) -> dict:
     base = connection.require("base_url").rstrip("/")

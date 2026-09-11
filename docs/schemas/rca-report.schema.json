@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galeqea.dev/schemas/rca-report.schema.json",
+  "title": "GaleQEA rca report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report",
+    "project_id",
+    "href",
+    "available",
+    "run_id",
+    "ui_href"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "report": {
+      "const": "rca"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "href": {
+      "type": "string"
+    },
+    "available": {
+      "type": "boolean"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "ui_href": {
+      "type": "string"
+    }
+  }
+}

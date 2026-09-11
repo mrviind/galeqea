@@ -83,8 +83,25 @@ def load_all() -> int:
     return count
 
 
+async def _sweep_retention() -> None:
+    # Enqueue the sweep as a job: in-process it runs on the loop as before, on the
+    # Postgres queue a worker does it, so retention survives a web restart (WO#4 P2-1).
+    from ..jobs import get_queue
+    await get_queue().enqueue("retention_sweep")
+
+
+def register_maintenance() -> None:
+    """Daily housekeeping: expire artifacts past each project's retention window."""
+    scheduler().add_job(
+        _sweep_retention, trigger=CronTrigger(hour=3, minute=17, timezone="UTC"),
+        id="maintenance:retention", replace_existing=True,
+        misfire_grace_time=3600, coalesce=True,
+    )
+
+
 def start() -> None:
     sched = scheduler()
+    register_maintenance()
     if not sched.running:
         sched.start()
 

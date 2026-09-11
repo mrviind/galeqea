@@ -13,7 +13,7 @@ once. This module makes it real:
 * **Never returned.** Reads give a hint (`sk-ant-…4f2a`) so a human can confirm
   which key is wired up without it entering a response body or a log.
 * **Budgeted.** An optional monthly spend cap, enforced from the usage ledger
-  before a request is made — not reconciled afterwards, when the money is gone.
+  before a request is made, not reconciled afterwards when the money is gone.
 """
 
 from __future__ import annotations
@@ -70,6 +70,25 @@ class ModelCredential:
 
 class KeyError_(RuntimeError):
     """Raised with a message safe to show a user."""
+
+
+class RoleCeilingExceeded(KeyError_):
+    """A single model call in a role would run past its per-call token ceiling.
+
+    Raised *before* the call, not reconciled after it. The whole point of a
+    ceiling is to stop and ask rather than discover the spend in the bill. Carries
+    the role, the estimate and the cap so the caller can degrade gracefully (fall
+    back to the deterministic tier) and tell the user exactly what tripped it.
+    """
+
+    def __init__(self, role: str, est_tokens: int, ceiling: int):
+        self.role, self.est_tokens, self.ceiling = role, est_tokens, ceiling
+        super().__init__(
+            f"a single {role} call would use about {est_tokens} tokens, over its "
+            f"per-call ceiling of {ceiling}. Stopping rather than spending. Raise "
+            f"the ceiling in Settings → Model (per-role) or trim the page state. "
+            "Everything that does not need a model still works."
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -189,6 +208,93 @@ def config_for(db: Session, *, provider: str, project_id: str | None) -> dict:
         if secret is not None:
             return dict(secret.meta or {})
     return {}
+
+
+def set_role_models(db: Session, *, provider: str, project_id: str | None,
+                    role_models: dict) -> dict:
+    """Merge per-role model overrides (planner/grounder/judge) into a provider's
+    stored config, without touching its key. Updates the config the resolver reads
+    (project first, then global); creates a project-scoped meta entry if none exists
+    (fine for a local/no-key provider). Returns the merged role_models."""
+    name = _secret_name(provider)
+    secret = None
+    for clause in (VaultSecret.project_id == project_id, VaultSecret.project_id.is_(None)):
+        if clause is None:
+            continue
+        secret = db.execute(select(VaultSecret).where(
+            VaultSecret.name == name, clause)).scalar_one_or_none()
+        if secret is not None:
+            break
+    if secret is None:
+        secret = VaultSecret(project_id=project_id, name=name, kind="model_api_key")
+        db.add(secret)
+    meta = dict(secret.meta or {})
+    merged = {**(meta.get("role_models") or {}), **{k: v for k, v in role_models.items() if v}}
+    meta["role_models"] = merged
+    secret.meta = meta
+    db.flush()
+    return merged
+
+
+def set_role_ceilings(db: Session, *, provider: str, project_id: str | None,
+                      role_ceilings: dict) -> dict:
+    """Merge per-role per-call token ceilings (planner/grounder/judge) into a
+    provider's stored config. A value of 0 (or falsy) clears that role's ceiling.
+    Returns the merged mapping."""
+    name = _secret_name(provider)
+    secret = None
+    for clause in (VaultSecret.project_id == project_id, VaultSecret.project_id.is_(None)):
+        if clause is None:
+            continue
+        secret = db.execute(select(VaultSecret).where(
+            VaultSecret.name == name, clause)).scalar_one_or_none()
+        if secret is not None:
+            break
+    if secret is None:
+        secret = VaultSecret(project_id=project_id, name=name, kind="model_api_key")
+        db.add(secret)
+    meta = dict(secret.meta or {})
+    current = dict(meta.get("role_ceilings") or {})
+    for role, cap in role_ceilings.items():
+        try:
+            cap = int(cap)
+        except (TypeError, ValueError):
+            continue
+        if cap > 0:
+            current[role] = cap
+        else:
+            current.pop(role, None)
+    meta["role_ceilings"] = current
+    secret.meta = meta
+    db.flush()
+    return current
+
+
+def role_ceiling(db: Session, *, provider: str, project_id: str | None, bucket: str) -> int | None:
+    """The per-call token ceiling configured for a role bucket, if any."""
+    if provider in (None, "", "none"):
+        return None
+    meta = config_for(db, provider=provider, project_id=project_id)
+    cap = (meta.get("role_ceilings") or {}).get(bucket)
+    try:
+        cap = int(cap)
+    except (TypeError, ValueError):
+        return None
+    return cap if cap > 0 else None
+
+
+def check_role_ceiling(db: Session, *, provider: str, project_id: str | None,
+                       bucket: str, est_tokens: int) -> None:
+    """Refuse a call whose estimated tokens run past the role's per-call ceiling.
+
+    A no-op when no ceiling is configured for the bucket. Estimate is the trimmed
+    page state (WO#8-A ``state_tokens``) plus a fixed prompt-scaffold allowance.
+    """
+    cap = role_ceiling(db, provider=provider, project_id=project_id, bucket=bucket)
+    if cap is None:
+        return
+    if int(est_tokens or 0) > cap:
+        raise RoleCeilingExceeded(bucket, int(est_tokens or 0), cap)
 
 
 def listing(db: Session, project_id: str | None = None) -> list[ModelCredential]:

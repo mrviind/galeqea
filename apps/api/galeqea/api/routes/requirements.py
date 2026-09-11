@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +17,11 @@ from ..deps import current_user, get_project
 router = APIRouter(prefix="/api/projects/{project_id}/requirements", tags=["requirements"])
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+#: The bundled sample requirements doc, the one-click "see the whole flow
+#: work" template. Every new workspace can download it, or ingest it directly
+#: via /sample, without having to write a spec first.
+_TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "assets" / "sample-requirements.md"
 
 
 @router.post("/upload")
@@ -52,6 +60,81 @@ async def upload(
     }
 
 
+@router.get("/template")
+def download_template():
+    """The bundled sample requirements doc, as a plain download, so a user can
+    see the shape a good requirements document takes before writing (or
+    uploading) their own."""
+    if not _TEMPLATE_PATH.exists():
+        raise HTTPException(404, "no sample requirements template is bundled")
+    return Response(
+        _TEMPLATE_PATH.read_bytes(), media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="sample-requirements.md"'},
+    )
+
+
+@router.post("/sample")
+async def use_sample(
+    payload: dict | None = None,
+    project: Project = Depends(get_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """One click: ingest the bundled sample requirements doc exactly as if it
+    had been uploaded, generate its test proposals, and, unless told not
+    to, run the full floor (analyze the target, plan, approve, execute,
+    report) against it. This is the "reset and try the whole flow" button:
+    every workspace can see a complete Test Plan → test cases → run →
+    Test Completion Report without writing a spec or crawling a real site
+    first."""
+    if not _TEMPLATE_PATH.exists():
+        raise HTTPException(404, "no sample requirements template is bundled")
+    payload = payload or {}
+    data = _TEMPLATE_PATH.read_bytes()
+
+    if payload.get("run", True):
+        from ...services.full_floor import floor_from_requirements
+
+        target = (payload.get("target") or "").strip() or settings.demo_target_url
+        result = await floor_from_requirements(
+            db, project=project, target=target, doc_bytes=data,
+            doc_filename=_TEMPLATE_PATH.name, decider=user,
+            doc_title="Sample Requirements: TaskFlow (template)",
+            page_limit=payload.get("page_limit"),
+        )
+        db.commit()
+        return result
+
+    result = service.ingest_document(
+        db, project_id=project.id, filename=_TEMPLATE_PATH.name,
+        data=data, title="Sample Requirements: TaskFlow (template)",
+        mime_type="text/markdown", uploaded_by=user.id,
+    )
+    generated = {"proposals": 0, "created": 0}
+    if result.items:
+        provider = default_provider() if settings.ai_enabled else None
+        gen = await service.generate(db, project_id=project.id, doc_id=result.doc.id,
+                                     provider=provider)
+        created = service.persist_proposals(
+            db, project_id=project.id, proposals=gen.get("proposals", [])
+        ) if gen.get("proposals") else []
+        db.commit()
+        generated = {"proposals": len(gen.get("proposals", [])), "created": len(created)}
+    return {
+        "doc": {"id": result.doc.id, "title": result.doc.title, "kind": result.doc.kind,
+                "page_count": result.doc.page_count, "sha256": result.doc.content_sha256},
+        "requirements": [
+            {"id": i.id, "ref": i.ref, "title": i.title, "risk": i.risk, "kind": i.kind,
+             "acceptance_criteria": i.acceptance_criteria, "open_questions": i.open_questions}
+            for i in result.items
+        ],
+        "summary": result.summary,
+        "warnings": result.warnings,
+        "injection_scan": result.injection,
+        "generated": generated,
+    }
+
+
 @router.get("/docs")
 def list_docs(project: Project = Depends(get_project), db: Session = Depends(get_db)):
     rows = db.execute(
@@ -61,9 +144,30 @@ def list_docs(project: Project = Depends(get_project), db: Session = Depends(get
     return [
         {"id": d.id, "title": d.title, "kind": d.kind, "filename": d.source_filename,
          "page_count": d.page_count, "items": len(d.items), "meta": d.meta,
+         "archived": bool((d.meta or {}).get("archived")),
          "created_at": d.created_at.isoformat()}
         for d in rows
     ]
+
+
+@router.post("/docs/{doc_id}/archive")
+def archive_doc(doc_id: str, project: Project = Depends(get_project),
+                db: Session = Depends(get_db)):
+    result = service.archive_requirement_doc(db, project_id=project.id, doc_id=doc_id)
+    if not result.get("ok"):
+        raise HTTPException(404, result.get("error", "not found"))
+    db.commit()
+    return result
+
+
+@router.post("/dedupe")
+def dedupe_docs(payload: dict | None = None, project: Project = Depends(get_project),
+                db: Session = Depends(get_db)):
+    payload = payload or {}
+    result = service.dedupe_requirement_docs(
+        db, project_id=project.id, apply=bool(payload.get("apply")))
+    db.commit()
+    return result
 
 
 @router.get("")
@@ -79,7 +183,7 @@ def list_items(
     return [
         {"id": i.id, "ref": i.ref, "title": i.title, "text": i.text, "section": i.section,
          "kind": i.kind, "risk": i.risk, "acceptance_criteria": i.acceptance_criteria,
-         "open_questions": i.open_questions}
+         "open_questions": i.open_questions, "source_anchor": i.source_anchor or {}}
         for i in rows
     ]
 

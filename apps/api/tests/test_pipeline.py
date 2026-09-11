@@ -9,7 +9,6 @@ from galeqea.core.safety import scan, wrap_untrusted
 from galeqea.core.vault import VaultError, seal, unseal
 from galeqea.engine.ingest import split_requirements, summarize
 
-
 # --------------------------------------------------------------------------- #
 # Requirement extraction
 # --------------------------------------------------------------------------- #
@@ -217,7 +216,7 @@ def test_header_is_detected_below_a_title_block():
     from galeqea.engine.spreadsheet import extract
 
     data = _workbook([
-        ["Acme — Requirements Register"],
+        ["Acme Requirements Register"],
         ["Version 2.4", "Owner: J. Patel"],
         [],
         ["Req ID", "Requirement", "Acceptance Criteria", "Priority"],
@@ -300,9 +299,9 @@ def test_dedupe_never_removes_the_only_coverage_a_requirement_has(db, project):
     from galeqea.services.requirements import dedupe
 
     proposals = [
-        {"title": "REQ-1 — verify the user can delete their account",
+        {"title": "REQ-1: verify the user can delete their account",
          "rationale": "covers deletion", "requirement_refs": ["REQ-1"]},
-        {"title": "REQ-2 — verify the user can delete their account",
+        {"title": "REQ-2: verify the user can delete their account",
          "rationale": "covers deletion", "requirement_refs": ["REQ-2"]},
     ]
     kept = dedupe(proposals)
@@ -313,7 +312,7 @@ def test_dedupe_never_removes_the_only_coverage_a_requirement_has(db, project):
 def test_a_true_duplicate_is_still_removed(db, project):
     from galeqea.services.requirements import dedupe
 
-    duplicate = {"title": "REQ-1 — verify the user can delete their account",
+    duplicate = {"title": "REQ-1: verify the user can delete their account",
                  "rationale": "covers deletion", "requirement_refs": ["REQ-1"]}
     assert len(dedupe([duplicate, dict(duplicate)])) == 1
 
@@ -359,7 +358,7 @@ def test_backfill_respects_tests_that_already_exist(db, project):
 # --------------------------------------------------------------------------- #
 def test_azure_steps_xml_is_valid_and_double_escaped():
     """The Steps field is strict: two parameterizedStrings per step, and the
-    inner HTML is escaped twice — once as HTML, once as XML. A stray ampersand
+    inner HTML is escaped twice, once as HTML, once as XML. A stray ampersand
     fails validation outright rather than degrading."""
     import xml.etree.ElementTree as ET
 
@@ -380,7 +379,7 @@ def test_azure_steps_xml_is_valid_and_double_escaped():
 
     # Two layers, verified from both sides. In the raw field value the HTML is
     # XML-escaped; after one round of XML parsing the HTML layer remains, with
-    # its own entities intact — which is what Azure expects to receive.
+    # its own entities intact, which is what Azure expects to receive.
     assert "&lt;DIV&gt;" in xml
     assert "Save &amp;amp; Continue" in xml
 

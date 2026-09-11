@@ -28,9 +28,13 @@ class CompiledTest:
     title: str
     steps: list[dict]
     attempt: int = 1
+    #: Per-test auth, injected for a page behind a login (form → storageState,
+    #: basic/digest → httpCredentials). Plaintext only in this transient plan.
+    storage_state: dict | None = None
+    http_credentials: dict | None = None
 
     def as_dict(self) -> dict:
-        return {
+        out = {
             "id": self.id,
             "testCaseId": self.test_case_id,
             "key": self.key,
@@ -38,6 +42,11 @@ class CompiledTest:
             "steps": self.steps,
             "attempt": self.attempt,
         }
+        if self.storage_state is not None:
+            out["storageState"] = self.storage_state
+        if self.http_credentials is not None:
+            out["httpCredentials"] = self.http_credentials
+        return out
 
 
 class PlanCompiler:
@@ -55,6 +64,7 @@ class PlanCompiler:
         project = self.db.get(Project, run.project_id)
         base_url = run.base_url or self._base_url(project, run.environment)
 
+        auth = _auth_for_run(run)
         compiled: list[CompiledTest] = []
         skipped: list[dict] = []
         for tc in test_cases:
@@ -65,6 +75,12 @@ class PlanCompiler:
             if not steps:
                 skipped.append({"key": tc.key, "reason": "no executable steps"})
                 continue
+            # A page behind a login needs its matching credential injected. If
+            # none exists, the test is skipped with a reason (never failed).
+            ss, http, skip = _resolve_test_auth(tc, auth, run.project_id)
+            if skip:
+                skipped.append({"key": tc.key, "reason": skip, "auth_gated": True})
+                continue
             compiled.append(
                 CompiledTest(
                     id=f"{run.id}:{tc.id}",
@@ -72,16 +88,18 @@ class PlanCompiler:
                     key=tc.key,
                     title=tc.title,
                     steps=steps,
+                    storage_state=ss,
+                    http_credentials=http,
                 )
             )
 
         settings_blob = (project.settings if project else {}) or {}
-        return {
+        plan = {
             "runId": run.id,
             "baseUrl": base_url,
             "browsers": run.browsers or ["chromium"],
             "parallelism": settings_blob.get("parallelism", 2),
-            "headless": settings_blob.get("headless", True),
+            "headless": (run.ci_metadata or {}).get("headless", settings_blob.get("headless", True)),
             "trace": settings_blob.get("trace", True),
             "video": settings_blob.get("video", False),
             "viewport": settings_blob.get("viewport", {"width": 1440, "height": 900}),
@@ -90,6 +108,10 @@ class PlanCompiler:
             "tests": [c.as_dict() for c in compiled],
             "_skipped": skipped,
         }
+        rate = (run.ci_metadata or {}).get("rate_limit_rps")
+        if rate:
+            plan["rateLimitRps"] = rate
+        return plan
 
     # ------------------------------------------------------------------ #
     def compile_steps(self, test_case: TestCase) -> list[dict]:
@@ -241,3 +263,56 @@ def select_tests(db: Session, project_id: str, selection: dict) -> list[TestCase
         rows = [r for r in rows if not r.quarantined]
 
     return rows
+
+
+# --------------------------------------------------------------------------- #
+# Per-test authentication
+# --------------------------------------------------------------------------- #
+def _auth_for_run(run: Run) -> dict | None:
+    """The auth bundle attached to a run ({credentials, requirements}), or None.
+    The login-handoff marker ({login_handoff:…}) is not a credential bundle."""
+    auth = (run.ci_metadata or {}).get("auth")
+    if isinstance(auth, dict) and auth.get("credentials"):
+        return auth
+    return None
+
+
+def _match_credential(bundle: dict, kind: str, path: str) -> dict | None:
+    best, best_len = None, -1
+    for e in bundle.get("credentials", []):
+        if e.get("kind") != kind:
+            continue
+        scope = e.get("scope", "") or ""
+        if scope and not path.startswith(scope):
+            continue
+        if len(scope) > best_len:
+            best, best_len = e, len(scope)
+    return best
+
+
+def _resolve_test_auth(tc, bundle: dict | None, project_id: str):
+    """(storage_state, http_credentials, skip_reason) for a test. A page whose
+    required auth kind has no matching credential returns a skip reason instead of
+    being run (and later failing on a 401)."""
+    import json
+    from urllib.parse import urlparse
+
+    prov = getattr(tc, "provenance", None) or {}
+    page = prov.get("page", "")
+    path = urlparse(page).path or "/"
+    kind = prov.get("auth_kind") or (bundle or {}).get("requirements", {}).get(path)
+    if not kind:
+        return None, None, None
+    entry = _match_credential(bundle or {"credentials": []}, kind, path)
+    if entry is None:
+        return None, None, f"auth-gated ({kind}): add credentials"
+    from ..core import vault
+    try:
+        if kind == "form" and entry.get("session_sealed"):
+            return json.loads(vault.unseal(entry["session_sealed"], aad=f"auth:{project_id}")), None, None
+        if kind == "form":  # credential stored but not logged in yet
+            return None, None, f"auth-gated (form): sign in first ({entry.get('username_hint', '')})"
+        creds = json.loads(vault.unseal(entry["creds_sealed"], aad=f"creds:{project_id}"))
+        return None, {"username": creds["username"], "password": creds["password"]}, None
+    except Exception:  # noqa: BLE001 (a bad key must not fail the whole compile)
+        return None, None, f"auth-gated ({kind}): credential could not be read"

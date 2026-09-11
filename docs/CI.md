@@ -22,7 +22,7 @@ skipped:
 
 Output includes the coverage note:
 
-> Running 12 of 84 approved tests (14%). Omitted tests are listed in full — this
+> Running 12 of 84 approved tests (14%). Omitted tests are listed in full; this
 > selection reduces time, not accountability.
 
 Use the full suite on `main`. Selection is for feedback speed on a branch, not a

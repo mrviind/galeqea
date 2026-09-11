@@ -7,12 +7,12 @@ import { ModelSelector } from './ModelSelector';
  * The Copilot composer.
  *
  * The command preview above the box is the part worth keeping: before anything
- * is sent, the server says how it *would* route the sentence — deterministically
- * or through a model — so the user knows whether they are about to spend a token
+ * is sent, the server says how it *would* route the sentence, deterministically
+ * or through a model, so the user knows whether they are about to spend a token
  * or not. On a platform whose default mode is No-AI, that is not a detail.
  */
 export function MessageInput({
-  value, onChange, onSend, busy, disabled, preview, model, onModelChange,
+  value, onChange, onSend, busy, disabled, preview, model, onModelChange, focusSignal,
 }: {
   value: string;
   onChange: (text: string) => void;
@@ -22,8 +22,15 @@ export function MessageInput({
   preview: { intent: string; explanation: string; path: string } | null;
   model: { provider: string; model: string } | null;
   onModelChange: (choice: { provider: string; model: string }) => void;
+  focusSignal?: number;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (focusSignal === undefined || focusSignal === 0) return;
+    const el = ref.current;
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }, [focusSignal]);
 
   useEffect(() => {
     const el = ref.current;
@@ -32,7 +39,7 @@ export function MessageInput({
     // Floor at one comfortable line. scrollHeight can read 0/too-small when the
     // effect runs before layout or web fonts settle; without a floor the box
     // collapses and the placeholder clips against the top border. The CSS
-    // min-height below is the real guard — this keeps the grown height sane.
+    // min-height below is the real guard; this keeps the grown height sane.
     el.style.height = `${Math.max(40, Math.min(el.scrollHeight, 160))}px`;
   }, [value]);
 
@@ -53,10 +60,10 @@ export function MessageInput({
                 : 'border-line bg-surface-3 text-ink-3',
             )}
             title={preview.path === 'deterministic'
-              ? 'Resolved by rule — no model call, no tokens spent'
+              ? 'Resolved by rule: no model call, no tokens spent'
               : 'Needs a model'}
           >
-            {preview.path === 'deterministic' ? 'no model' : preview.path}
+            {preview.path === 'deterministic' ? 'no tokens' : preview.path}
           </span>
         </div>
       )}
@@ -76,7 +83,7 @@ export function MessageInput({
               onSend();
             }
           }}
-          placeholder={disabled ? 'Select a project first' : 'Ask, or tell GaleQEA what to run…'}
+          placeholder={disabled ? 'Select a project first' : 'Enter a website URL to test, or ask anything…'}
           className="block max-h-[160px] min-h-[40px] w-full resize-none bg-transparent px-3 py-2.5 text-[12.5px] leading-normal text-ink placeholder:text-ink-3 focus:outline-none disabled:cursor-not-allowed"
         />
         <div className="flex items-center gap-2 border-t border-line px-1.5 py-1.5">
@@ -85,7 +92,7 @@ export function MessageInput({
             onClick={onSend}
             disabled={busy || disabled || !value.trim()}
             title="Send"
-            className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-ink text-canvas transition hover:bg-white disabled:pointer-events-none disabled:opacity-40"
+            className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-ink text-canvas transition hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <ArrowUp size={14} />}
           </button>

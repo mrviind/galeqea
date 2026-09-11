@@ -66,9 +66,44 @@ class RequirementItem(Base, IdMixin, TimestampMixin):
     # Ambiguities the Requirement Analyst could not resolve - surfaced to humans
     # instead of being silently guessed at.
     open_questions: Mapped[list] = mapped_column(JSONish, default=list)
+    # Where this item came from in the source document, so a generated test can
+    # point a reviewer back to the exact place a rule was written (WO#9-A):
+    # {heading_path:[...], page:int|None, line:int|None, char_start:int, doc_id}.
+    source_anchor: Mapped[dict] = mapped_column(JSONish, default=dict)
     embedding: Mapped[list | None] = mapped_column(JSONish, nullable=True)
 
     doc: Mapped[RequirementDoc] = relationship(back_populates="items")
+
+
+class RequirementRule(Base, IdMixin, TimestampMixin):
+    """An atomic, testable rule distilled from one requirement (WO#9-B).
+
+    Where a RequirementItem is a paragraph, a rule is a single obligation with a
+    machine-readable shape ("password length is between 8 and 64", "only an admin
+    may refund"). Cases are generated *per rule* and link back with ``covers``, so
+    a coverage gap becomes precise: not "this requirement is untested" but "this
+    specific rule within it has no case".
+    """
+
+    __tablename__ = "requirement_rules"
+
+    project_id: Mapped[str] = mapped_column(String(40), index=True)
+    doc_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("requirement_items.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    requirement_ref: Mapped[str] = mapped_column(String(64), index=True)
+    rule_id: Mapped[str] = mapped_column(String(64), index=True)      # e.g. DEMO-R-001
+    rule_type: Mapped[str] = mapped_column(String(24), default="functional")
+    # functional | validation | permission | nav | nonfunctional
+    text: Mapped[str] = mapped_column(Text, default="")
+    inputs: Mapped[list] = mapped_column(JSONish, default=list)        # variable/param names
+    constraints: Mapped[dict] = mapped_column(JSONish, default=dict)   # structured shape
+    technique: Mapped[str] = mapped_column(String(32), default="")     # design technique hint
+    source_anchor: Mapped[dict] = mapped_column(JSONish, default=dict)
+    provenance: Mapped[dict] = mapped_column(JSONish, default=dict)
+    # Ambiguities specific to this rule (WO#9-B ambiguity gate).
+    open_questions: Mapped[list] = mapped_column(JSONish, default=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -110,6 +145,14 @@ class TestCase(Base, IdMixin, TimestampMixin):
 
     # Traceability: list of RequirementItem.ref
     requirement_refs: Mapped[list] = mapped_column(JSONish, default=list)
+    # Finer-grained traceability: the atomic rule_ids this case exercises (WO#9-B).
+    # req -> rules -> cases joins through here.
+    covers: Mapped[list] = mapped_column(JSONish, default=list)
+
+    # Reusable step blocks referenced by id, and named {{param}} values substituted
+    # into the steps at run time (the parameter table for this case).
+    shared_step_ids: Mapped[list] = mapped_column(JSONish, default=list)
+    parameters: Mapped[dict] = mapped_column(JSONish, default=dict)
 
     # Provenance of every generated artifact: source doc, prompt hash, model,
     # provider, agent role, approver. Required for the compliance export.
@@ -310,6 +353,12 @@ class Run(Base, IdMixin, TimestampMixin):
     browsers: Mapped[list] = mapped_column(JSONish, default=lambda: ["chromium"])
     suite_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     parent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # Release context: which cycle a run lands in, and a snapshot of the environment
+    # it used (so a run's provenance survives edits to the Environment row).
+    cycle_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    milestone_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    environment_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    environment_snapshot: Mapped[dict] = mapped_column(JSONish, default=dict)
     selection: Mapped[dict] = mapped_column(JSONish, default=dict)
 
     status: Mapped[str] = mapped_column(String(20), default=RunStatus.QUEUED, index=True)

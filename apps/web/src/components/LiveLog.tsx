@@ -109,7 +109,7 @@ function describe(event: StreamEvent): { text: string; tone: string } {
     case 'run.test.started':
       return { text: `  ┌ ${p.key ?? ''} ${p.title ?? ''} [${p.browser ?? ''}]`, tone: 'info' };
     case 'run.step': {
-      if (p.phase === 'start') return { text: ` │ ${String(p.index).padStart(2, '0')} ${p.action} — ${p.intent ?? ''}`, tone: 'dim' };
+      if (p.phase === 'start') return { text: ` │ ${String(p.index).padStart(2, '0')} ${p.action}: ${p.intent ?? ''}`, tone: 'dim' };
       const mark = p.status === 'passed' ? '✓' : p.status === 'failed' ? '✗' : '·';
       const heal = p.healed ? ' ⟲ healed' : '';
       const err = p.error ? `  ${p.error}` : '';
@@ -120,7 +120,7 @@ function describe(event: StreamEvent): { text: string; tone: string } {
     }
     case 'run.test.finished':
       return {
-        text: `  └ ${p.key ?? ''} ${p.status} ${p.duration_ms ?? 0}ms${p.error ? ` — ${p.error}` : ''}`,
+        text: `  └ ${p.key ?? ''} ${p.status} ${p.duration_ms ?? 0}ms${p.error ? `: ${p.error}` : ''}`,
         tone: p.status === 'passed' ? 'ok' : 'fail',
       };
     case 'run.progress':
@@ -130,11 +130,11 @@ function describe(event: StreamEvent): { text: string; tone: string } {
     case 'run.finished':
       return { text: `■ run ${p.status} · ${JSON.stringify(p.totals ?? {})}`, tone: p.status === 'passed' ? 'ok' : 'fail' };
     case 'run.handoff':
-      return { text: `⏸ waiting for a human — ${p.reason ?? ''} (${p.url ?? ''})`, tone: 'warn' };
+      return { text: `⏸ waiting for a human: ${p.reason ?? ''} (${p.url ?? ''})`, tone: 'warn' };
     case 'heal.proposed':
       return {
         text: p.kind === 'proposal'
-          ? `⟲ heal ${p.ok ? 'proposed' : 'declined'} via ${p.strategy} (${(p.score ?? 0).toFixed(2)}) — ${p.reason ?? ''}`
+          ? `⟲ heal ${p.ok ? 'proposed' : 'declined'} via ${p.strategy} (${(p.score ?? 0).toFixed(2)}): ${p.reason ?? ''}`
           : `⟲ ${p.kind}: ${p.from ?? ''} → ${p.to ?? ''}`,
         tone: 'warn',
       };

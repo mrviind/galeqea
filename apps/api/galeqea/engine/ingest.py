@@ -38,6 +38,12 @@ MODAL = re.compile(
     r"returns?|supports?)\b",
     re.IGNORECASE,
 )
+#: A bullet that states a constraint but no modal verb ("payment is one of card,
+#: paypal or credit") is still a testable obligation, so keep it (WO#9-B).
+CONSTRAINT_HINT = re.compile(
+    r"\b(one of|any of|either|between|from\s+\d|at least|at most|no more than|"
+    r"no fewer than|up to|exactly|only|required|mandatory|is one of)\b", re.I)
+
 NFR_MARKERS = (
     "performance", "latency", "throughput", "availability", "uptime", "security",
     "accessibility", "wcag", "gdpr", "compliance", "scalab", "concurrent",
@@ -67,6 +73,10 @@ class ExtractedDoc:
     #: us. When present these are authoritative and the prose splitter is
     #: skipped - re-deriving rows from rendered text would lose the columns.
     structured: list = field(default_factory=list)
+    #: Character offset in ``text`` where each page begins (WO#9-A). Lets a
+    #: requirement's char position map back to a page number for its anchor.
+    #: Empty for formats without pages (Markdown, DOCX, a spreadsheet).
+    page_offsets: list[int] = field(default_factory=list)
 
     @property
     def sha256(self) -> str:
@@ -84,6 +94,9 @@ class CandidateRequirement:
     acceptance_criteria: list[str] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
     inferred_ref: bool = False
+    #: {heading_path:[...], page:int|None, line:int|None, char_start:int}, filled
+    #: by the deterministic splitter; ``doc_id`` is added at persist time (WO#9-A).
+    source_anchor: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -92,6 +105,7 @@ class CandidateRequirement:
             "acceptance_criteria": self.acceptance_criteria,
             "open_questions": self.open_questions,
             "inferred_ref": self.inferred_ref,
+            "source_anchor": self.source_anchor,
         }
 
 
@@ -104,10 +118,24 @@ def extract(data: bytes, filename: str, mime_type: str = "") -> ExtractedDoc:
     suffix = Path(filename).suffix.lower()
     if spreadsheet.looks_like_spreadsheet(filename, mime_type):
         return _extract_spreadsheet(data, filename)
+    # Prefer the optional layout-faithful parser (docling) for rich office formats;
+    # it returns None when not installed or it can't handle the file (WO#9-A).
+    if suffix in {".pdf", ".docx", ".doc", ".pptx", ".ppt"} or "wordprocessingml" in mime_type \
+            or "presentationml" in mime_type or mime_type == "application/pdf":
+        layout = _extract_with_docling(data, filename)
+        if layout is not None:
+            return layout
     if suffix == ".pdf" or mime_type == "application/pdf":
         return _extract_pdf(data)
     if suffix in {".docx", ".doc"} or "wordprocessingml" in mime_type:
         return _extract_docx(data)
+    if suffix in {".pptx", ".ppt"} or "presentationml" in mime_type:
+        return ExtractedDoc(
+            text="", mime_type=mime_type or "application/vnd.ms-powerpoint",
+            warnings=["PowerPoint decks need the optional `docling` extra for "
+                      "layout-faithful text (pip install 'galeqea[docling]'), or paste "
+                      "the text directly."],
+        )
     if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"} or mime_type.startswith("image/"):
         return ExtractedDoc(
             text="",
@@ -152,6 +180,10 @@ def _extract_spreadsheet(data: bytes, filename: str) -> ExtractedDoc:
                 acceptance_criteria=item.acceptance_criteria,
                 open_questions=_ambiguities(item.text),
                 inferred_ref=item.ref.startswith("REQ-") and not item.ref[4:].isalpha(),
+                # A spreadsheet row's "anchor" is its sheet + section; it has no
+                # page or line, but the heading path still points a reviewer back.
+                source_anchor={"heading_path": [s for s in (item.section,) if s],
+                               "page": None, "line": None, "char_start": 0},
             )
             for item in sheet.requirements
         ],
@@ -174,8 +206,15 @@ def _extract_pdf(data: bytes) -> ExtractedDoc:
             "No text layer found - this looks like a scanned PDF. It needs OCR before "
             "requirements can be extracted."
         )
+    # Remember where each page starts in the joined text so a requirement's char
+    # offset can be mapped back to a page number (WO#9-A).
+    sep = "\n\n"
+    offsets, cursor = [], 0
+    for p in pages:
+        offsets.append(cursor)
+        cursor += len(p) + len(sep)
     return ExtractedDoc(
-        text="\n\n".join(pages), page_count=len(pages),
+        text=sep.join(pages), page_count=len(pages), page_offsets=offsets,
         mime_type="application/pdf", warnings=warnings,
     )
 
@@ -210,20 +249,56 @@ def _extract_docx(data: bytes) -> ExtractedDoc:
     )
 
 
+def _extract_with_docling(data: bytes, filename: str) -> ExtractedDoc | None:
+    """Layout-faithful extraction via the optional ``docling`` extra.
+
+    Returns None when docling is not installed, or cannot handle the file, so the
+    caller falls back to pypdf/python-docx. When it succeeds it exports Markdown
+    (headings intact), which the deterministic splitter turns into proper heading
+    paths, so provenance is *better* with docling, not different in shape (WO#9-A).
+    """
+    try:
+        from docling.datamodel.base_models import DocumentStream
+        from docling.document_converter import DocumentConverter
+    except ImportError:
+        return None
+    try:
+        stream = DocumentStream(name=filename, stream=io.BytesIO(data))
+        result = DocumentConverter().convert(stream)
+        markdown = result.document.export_to_markdown()
+    except Exception:  # noqa: BLE001 - any docling failure degrades, never breaks ingest
+        return None
+    if not markdown.strip():
+        return None
+    pages = 0
+    try:
+        pages = len(getattr(result.document, "pages", []) or [])
+    except Exception:  # noqa: BLE001
+        pages = 0
+    return ExtractedDoc(
+        text=markdown, page_count=pages, mime_type="text/markdown",
+        warnings=[f"Parsed with docling (layout-faithful) from {Path(filename).name}."],
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Requirement splitting (deterministic - runs with no model)
 # --------------------------------------------------------------------------- #
-def split_requirements(text: str, *, prefix: str = "REQ") -> list[CandidateRequirement]:
+def split_requirements(
+    text: str, *, prefix: str = "REQ", page_offsets: list[int] | None = None
+) -> list[CandidateRequirement]:
     if not text.strip():
         return []
 
+    page_offsets = page_offsets or []
     sections = _sections(text)
     out: list[CandidateRequirement] = []
     seen_refs: set[str] = set()
     counter = 0
 
-    for section_title, body in sections:
-        for block in _statements(body):
+    for section in sections:
+        section_title = section.heading_path[-1] if section.heading_path else ""
+        for block in _statements(section.body, base_offset=section.char_start):
             chunk = block.text
             explicit = REF_PATTERN.search(chunk)
             if explicit:
@@ -241,6 +316,15 @@ def split_requirements(text: str, *, prefix: str = "REQ") -> list[CandidateRequi
                 ref = f"{base_ref}.{dedupe}"
             seen_refs.add(ref)
 
+            # A back-pointer to exactly where this rule was written, so a
+            # generated test can send a reviewer to the source (WO#9-A).
+            anchor = {
+                "heading_path": section.heading_path,
+                "page": _page_for(block.char_start, page_offsets),
+                "line": text.count("\n", 0, block.char_start) + 1,
+                "char_start": block.char_start,
+            }
+
             out.append(CandidateRequirement(
                 ref=ref,
                 title=_title_of(chunk),
@@ -251,22 +335,57 @@ def split_requirements(text: str, *, prefix: str = "REQ") -> list[CandidateRequi
                 acceptance_criteria=_criteria_of(chunk, block.bullets),
                 open_questions=_ambiguities(chunk),
                 inferred_ref=inferred,
+                source_anchor=anchor,
             ))
     return out
 
 
-def _sections(text: str) -> list[tuple[str, str]]:
+def _est_tokens(text: str) -> int:
+    """Rough token count (~4 chars/token) for the ~2K-token chunk guard."""
+    return len(text) // 4
+
+
+def _page_for(offset: int, page_offsets: list[int]) -> int | None:
+    """1-based page number for a char offset; None when the source has no pages."""
+    if not page_offsets:
+        return None
+    import bisect
+    return max(1, bisect.bisect_right(page_offsets, offset))
+
+
+@dataclass(slots=True)
+class _Section:
+    """A heading's body plus the full breadcrumb of headings above it."""
+
+    heading_path: list[str]
+    body: str
+    char_start: int
+
+
+def _sections(text: str) -> list[_Section]:
+    """Split into sections, each carrying its full heading path (``["5. Checkout"]``
+    → ``["5. Checkout", "Payment"]`` for a nested sub-heading) and the char offset
+    where its body begins, so every downstream anchor can name where it came from.
+    """
     matches = list(HEADING.finditer(text))
     if not matches:
-        return [("", text)]
-    sections: list[tuple[str, str]] = []
+        return [_Section([], text, 0)]
+    out: list[_Section] = []
     if matches[0].start() > 0:
-        sections.append(("", text[: matches[0].start()]))
+        out.append(_Section([], text[: matches[0].start()], 0))
+    stack: list[tuple[int, str]] = []
     for i, match in enumerate(matches):
-        title = (match.group(2) or match.group(3) or "").strip()
+        if match.group(1):                      # markdown "### Title"
+            level, title = len(match.group(1)), (match.group(2) or "").strip()
+        else:                                   # setext "Title\n====="
+            level, title = 1, (match.group(3) or "").strip()
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        stack.append((level, title))
+        heading_path = [t for _, t in stack if t]
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        sections.append((title, text[match.end() : end]))
-    return sections
+        out.append(_Section(list(heading_path), text[match.end() : end], match.end()))
+    return out
 
 
 @dataclass(slots=True)
@@ -275,10 +394,35 @@ class _Block:
 
     text: str
     bullets: list[str] = field(default_factory=list)
+    char_start: int = 0
 
 
-def _statements(body: str) -> list[_Block]:
-    """Group a section into statements with their sub-bullets attached.
+#: A chunk larger than this is split at sentence boundaries (WO#9-A structural
+#: chunking: keep a chunk small enough to embed and reason about cheaply).
+_CHUNK_TOKEN_CAP = 2000
+
+
+def _split_oversize(text: str, start: int) -> list[tuple[str, int]]:
+    """Break a chunk over the token cap into ~cap-sized pieces at sentence ends."""
+    if _est_tokens(text) <= _CHUNK_TOKEN_CAP:
+        return [(text, start)]
+    pieces: list[tuple[str, int]] = []
+    buf, buf_start, cursor = "", start, 0
+    for sent in re.split(r"(?<=[.!?])\s+", text):
+        if buf and _est_tokens(f"{buf} {sent}") > _CHUNK_TOKEN_CAP:
+            pieces.append((buf.strip(), buf_start))
+            buf, buf_start = sent, start + cursor
+        else:
+            buf = f"{buf} {sent}".strip() if buf else sent
+        cursor += len(sent) + 1
+    if buf.strip():
+        pieces.append((buf.strip(), buf_start))
+    return pieces
+
+
+def _statements(body: str, *, base_offset: int = 0) -> list[_Block]:
+    """Group a section into statements with their sub-bullets attached, tracking
+    each block's absolute char offset for anchoring.
 
     Requirement documents overwhelmingly follow one of two shapes:
 
@@ -288,37 +432,61 @@ def _statements(body: str) -> list[_Block]:
     Shape A must keep its bullets as acceptance criteria - shattering one
     obligation into five destroys the traceability the whole pipeline depends
     on. Shape B must not merge them. Indentation is what distinguishes the two,
-    so it is tracked rather than guessed at.
+    so it is tracked rather than guessed at. A run of table rows (``a | b | c``)
+    is kept whole as one chunk rather than split row-by-row (WO#9-A).
     """
     blocks: list[_Block] = []
     current: _Block | None = None
-    current_indent = -1          # indent of the bullet that opened `current`
-    current_from_prose = False   # shape A: bullets below it are criteria
+    current_indent = -1
+    current_from_prose = False
+    table_lines: list[str] = []
+    table_start = 0
+    offset = 0
+
+    def flush_table() -> None:
+        nonlocal current, current_indent, current_from_prose
+        if not table_lines:
+            return
+        joined = "\n".join(table_lines).strip()
+        if len(joined) >= 8:
+            blocks.append(_Block(text=joined, char_start=base_offset + table_start))
+        current, current_indent, current_from_prose = None, -1, False
+        table_lines.clear()
 
     for raw in body.split("\n"):
+        line_start = offset
+        offset += len(raw) + 1               # +1 for the "\n" that split() dropped
         line = raw.strip()
         if not line:
+            flush_table()
             continue
+
+        is_bullet = bool(BULLET.match(raw) or NUMBERED.match(raw))
+        if "|" in line and len(line) > 3 and not is_bullet:
+            if not table_lines:
+                table_start = line_start
+            table_lines.append(line)
+            continue
+        flush_table()
 
         bullet = BULLET.match(raw) or NUMBERED.match(raw)
         if bullet:
-            text = (
+            btext = (
                 bullet.group(1) if bullet.re is BULLET
                 else f"{bullet.group(1)} {bullet.group(2)}"
             ).strip()
-            if len(text) < 8:
+            if len(btext) < 8:
                 continue
             indent = len(raw) - len(raw.lstrip())
-
             attaches = (
                 current is not None
-                and not REF_PATTERN.search(text)
+                and not REF_PATTERN.search(btext)
                 and (current_from_prose or indent > current_indent)
             )
             if attaches:
-                current.bullets.append(text)
+                current.bullets.append(btext)
             else:
-                current = _Block(text=text)
+                current = _Block(text=btext, char_start=base_offset + line_start)
                 current_indent = indent
                 current_from_prose = False
                 blocks.append(current)
@@ -326,27 +494,49 @@ def _statements(body: str) -> list[_Block]:
 
         if len(line) < 12:
             continue
-        current = _Block(text=line)
+        for piece, poff in _split_oversize(line, base_offset + line_start):
+            current = _Block(text=piece, char_start=poff)
+            blocks.append(current)
         current_indent = -1
         current_from_prose = True
-        blocks.append(current)
 
-    # Fall back to paragraph splitting when the section has no line structure.
+    flush_table()
+
+    # Fall back to paragraph splitting when the section has no line structure,
+    # capping each paragraph at the chunk token budget.
     if not blocks:
-        blocks = [
-            _Block(text=p.strip())
-            for p in re.split(r"\n\s*\n", body)
-            if len(p.strip()) > 30
-        ]
+        cursor = 0
+        for part in re.split(r"(\n\s*\n)", body):
+            if part.strip() and not re.fullmatch(r"\n\s*\n", part):
+                lead = len(part) - len(part.lstrip())
+                start = base_offset + cursor + lead
+                stripped = part.strip()
+                if len(stripped) > 30:
+                    for piece, poff in _split_oversize(stripped, start):
+                        blocks.append(_Block(text=piece.strip(), char_start=poff))
+            cursor += len(part)
 
     return [
         b for b in blocks
-        if REF_PATTERN.search(b.text) or MODAL.search(b.text) or len(b.text) > 60
+        if REF_PATTERN.search(b.text) or MODAL.search(b.text)
+        or CONSTRAINT_HINT.search(b.text) or len(b.text) > 60
     ]
 
 
+def strip_markdown(text: str) -> str:
+    """Flatten inline markdown to plain text so a title never shows raw ``**`` etc.
+    (WO#9-D cosmetic). Emphasis, code, and links become their visible text."""
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)   # [label](url) -> label
+    text = re.sub(r"(\*\*|__|~~|\*|_|`)(.+?)\1", r"\2", text)  # **b** *i* `c` ~~s~~
+    return re.sub(r"[*_`~]", "", text)                        # any stragglers
+
+
 def _title_of(chunk: str) -> str:
-    cleaned = REF_PATTERN.sub("", chunk).strip(" :-–—\t")
+    # Markdown must be flattened *before* the leading-punctuation trim - a ref
+    # like "**REQ-101 - Title.**" leaves "** - Title.**" once the ref itself is
+    # removed, and stripping punctuation off that (still-wrapped) string can't
+    # reach the dash hiding behind the "**". Flatten first, then trim.
+    cleaned = strip_markdown(REF_PATTERN.sub("", chunk)).strip(" :-–\u2014\t")
     first = re.split(r"(?<=[.!?])\s+", cleaned)[0]
     return (first[:180] + "…") if len(first) > 180 else first or cleaned[:180]
 
@@ -430,6 +620,23 @@ def _ambiguities(chunk: str) -> list[str]:
     if " and " in lowered and lowered.count(" and ") >= 3:
         found.append("this compounds several obligations - consider splitting it")
     return found[:5]
+
+
+def glossary_summary(text: str, *, limit: int = 1500) -> str:
+    """Distil the glossary/roles/definitions sections into a compact one-line digest,
+    straight from the section text; those lines are frequently too short to survive
+    the requirement filter, but they are the vocabulary every rule leans on (WO#9-A)."""
+    wanted = ("glossary", "definition", "terminology", "roles", "persona", "actor")
+    picks: list[str] = []
+    for section in _sections(text):
+        hp = " ".join(section.heading_path).lower()
+        if not any(w in hp for w in wanted):
+            continue
+        for line in section.body.split("\n"):
+            stripped = line.strip(" -*\u2022\t")
+            if len(stripped) > 8:
+                picks.append(" ".join(stripped.split()))
+    return (" \u00b7 ".join(picks))[:limit]
 
 
 def summarize(candidates: list[CandidateRequirement]) -> dict:

@@ -1,4 +1,4 @@
-"""The ceremonies, driven agentically — an agent runs sprint planning end to end
+"""Coverage planning, driven agentically: an agent runs plan_coverage end to end
 through the real registry and loop, the way the chat would."""
 
 from __future__ import annotations
@@ -34,13 +34,12 @@ class ScriptedPlanner(LLMProvider):
         step = self.calls
         self.calls += 1
         if step == 0:
-            return Completion(tool_calls=[{"id": "c1", "name": "plan_test_sprint",
-                                           "arguments": {"capacity_points": 8}}])
+            return Completion(tool_calls=[{"id": "c1", "name": "plan_coverage",
+                                           "arguments": {"top": 5}}])
         plan = self.saw[-1] if self.saw else {}
         return Completion(text=(
-            f"Here's a sprint plan: {len(plan.get('committed', []))} requirement(s) "
-            f"for {plan.get('committed_points', 0)} of {plan.get('capacity_points', 0)} points. "
-            "Refine it with the team before we commit."
+            f"Here's a coverage plan: {len(plan.get('cover_next', []))} requirement(s) "
+            "to cover next, highest value first. Refine it with the team."
         ))
 
     async def stream(self, messages, **_):
@@ -48,7 +47,7 @@ class ScriptedPlanner(LLMProvider):
         yield  # pragma: no cover
 
 
-def test_an_agent_runs_sprint_planning_from_a_prompt(db, project):
+def test_an_agent_runs_coverage_planning_from_a_prompt(db, project):
     doc = RequirementDoc(project_id=project.id, title="PRD", kind=DocKind.REQUIREMENT)
     db.add(doc)
     db.flush()
@@ -63,13 +62,12 @@ def test_an_agent_runs_sprint_planning_from_a_prompt(db, project):
                   system_prompt="You are a Principal SDET.")
     agent.max_steps = 4
     ctx = ToolContext(db=db, project_id=project.id, user=None, actor_kind="agent")
-    result = asyncio.run(agent.run("Plan the next testing sprint, capacity 8 points", ctx, history=[]))
+    result = asyncio.run(agent.run("Plan what to cover next, top 5", ctx, history=[]))
 
-    # The ceremony tool ran through the real loop and produced a committed plan.
-    assert [s["tool"] for s in result.steps] == ["plan_test_sprint"]
+    # The planning tool ran through the real loop and produced a ranked list.
+    assert [s["tool"] for s in result.steps] == ["plan_coverage"]
     plan = result.steps[0]["result"]
-    assert plan["ok"] and plan["committed_points"] <= 8
-    assert any(c["risk"] == "critical" for c in plan["committed"]), "critical work committed first"
+    assert plan["ok"] and plan["cover_next"]
+    assert plan["cover_next"][0]["risk"] == "critical", "critical work ranks first"
     # The model saw the plan and answered coherently.
-    assert "sprint plan" in result.text.lower()
-    assert "points" in result.text.lower()
+    assert "coverage plan" in result.text.lower()

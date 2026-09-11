@@ -179,14 +179,14 @@ def _a11y_explanation(rule: str) -> str:
     return {
         "image-alt": "An image has no alt text, so it is invisible to a screen reader.",
         "form-label": "A form control has no label, so its purpose is unannounced.",
-        "button-name": "A button has no accessible name — it announces as just 'button'.",
+        "button-name": "A button has no accessible name, so it announces as just 'button'.",
         "heading-order": "Heading levels skip a level, which breaks document navigation.",
         "html-lang": "The page declares no language, so screen readers guess the pronunciation.",
     }.get(rule, "An accessibility rule was violated.")
 
 
 def dedupe(findings: list[Finding]) -> list[Finding]:
-    """One defect, one report — however many times exploration walked into it."""
+    """One defect, one report, however many times exploration walked into it."""
     seen: set[str] = set()
     unique: list[Finding] = []
     for finding in findings:

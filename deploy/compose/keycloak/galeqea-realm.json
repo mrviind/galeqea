@@ -1,0 +1,44 @@
+{
+  "realm": "galeqea",
+  "enabled": true,
+  "sslRequired": "none",
+  "groups": [{ "name": "galeqea-admins" }],
+  "clients": [
+    {
+      "clientId": "galeqea",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "galeqea-oidc-secret",
+      "standardFlowEnabled": true,
+      "redirectUris": ["http://localhost:8080/api/auth/oidc/callback", "http://localhost:8098/api/auth/oidc/callback"],
+      "webOrigins": ["+"],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "tester",
+      "enabled": true,
+      "email": "tester@corp.example",
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "tester-pass", "temporary": false }],
+      "groups": ["/galeqea-admins"]
+    }
+  ]
+}

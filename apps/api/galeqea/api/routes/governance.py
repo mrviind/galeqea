@@ -12,6 +12,7 @@ from ...config import AIMode, settings
 from ...core import approvals, audit
 from ...core.approvals import ApprovalError, SelfApprovalError
 from ...core.events import Ev, Event, bus
+from ...core.security import authorize
 from ...core.vault import hint_for, seal
 from ...db import get_db
 from ...models import ApprovalRequest, ApprovalStatus, Project, Role, User, VaultSecret
@@ -52,7 +53,7 @@ async def decide(
     payload: dict,
     project: Project = Depends(get_project),
     db: Session = Depends(get_db),
-    user: User = Depends(current_user),
+    user: User = Depends(authorize(role=Role.AUTHOR, scope="approvals:decide")),
 ):
     decision = payload.get("decision")
     if decision not in {"approve", "reject"}:
@@ -85,7 +86,7 @@ def decide_batch(
     payload: dict,
     project: Project = Depends(get_project),
     db: Session = Depends(get_db),
-    user: User = Depends(current_user),
+    user: User = Depends(authorize(role=Role.AUTHOR, scope="approvals:decide")),
 ):
     try:
         decisions = approvals.decide_batch(
@@ -300,6 +301,40 @@ def read_settings(user: User = Depends(current_user)):
     }
 
 
+@settings_router.get("/role-models")
+def get_role_models(project_id: str = "", db: Session = Depends(get_db)):
+    """Per-role model routing + per-call token ceilings for the configured provider."""
+    from ...ai import keys
+    provider = settings.provider
+    cfg = (keys.config_for(db, provider=provider, project_id=project_id or None)
+           if provider not in (None, "", "none") else {})
+    return {"provider": provider,
+            "role_models": cfg.get("role_models", {}),
+            "role_ceilings": cfg.get("role_ceilings", {})}
+
+
+@settings_router.post("/role-models")
+def set_role_models_route(payload: dict, db: Session = Depends(get_db),
+                          user: User = Depends(current_user)):
+    """Route agent roles to specific models: a small/cheap model for locating, a
+    frontier one for planning (WO#8-C). Admin-gated like the rest of model config."""
+    if not user.at_least(Role.ADMIN):
+        raise HTTPException(403, "changing the model configuration requires the admin role")
+    from ...ai import keys
+    provider = settings.provider
+    if provider in (None, "", "none"):
+        raise HTTPException(400, "connect a model provider first")
+    pid = payload.get("project_id")
+    merged = keys.set_role_models(db, provider=provider, project_id=pid,
+                                  role_models=payload.get("role_models", {}))
+    ceilings = keys.set_role_ceilings(db, provider=provider, project_id=pid,
+                                      role_ceilings=payload.get("role_ceilings", {})) \
+        if "role_ceilings" in payload else \
+        keys.config_for(db, provider=provider, project_id=pid).get("role_ceilings", {})
+    db.commit()
+    return {"provider": provider, "role_models": merged, "role_ceilings": ceilings}
+
+
 @settings_router.post("/model")
 async def update_model(
     payload: dict, db: Session = Depends(get_db), user: User = Depends(current_user)
@@ -321,7 +356,7 @@ async def update_model(
     if settings.ai_mode is AIMode.NO_AI:
         # Clear the whole selection, not just the provider. Leaving a stale model
         # and base_url behind means the next switch to a hosted provider silently
-        # inherits a URL from whatever was configured before — which is how a
+        # inherits a URL from whatever was configured before, which is how a
         # request meant for Anthropic ends up at somebody's old test proxy.
         settings.provider = "none"
         settings.model = ""
@@ -361,7 +396,7 @@ def list_keys(
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
-    """Stored model credentials. Values never leave the vault — only hints."""
+    """Stored model credentials. Values never leave the vault; only hints do."""
     from ...ai import keys
 
     return {
@@ -389,7 +424,7 @@ def list_models(
 
     That is the difference between a BYOK client and a BYOK platform. The
     credential is centrally held, centrally rotated, and every use of it lands in
-    the audit ledger against the principal that caused it — none of which is
+    the audit ledger against the principal that caused it, none of which is
     possible when the key lives in someone's localStorage.
     """
     from ...ai import keys
@@ -536,7 +571,7 @@ def usage(
     days: int = 30,
     db: Session = Depends(get_db),
 ):
-    """Token and cost attribution — what the key has actually been spent on."""
+    """Token and cost attribution: what the key has actually been spent on."""
     from datetime import timedelta
 
     from ...models import UsageLedger

@@ -69,7 +69,7 @@ def test_every_chip_is_a_prompt_a_person_can_read():
 # --------------------------------------------------------------------------- #
 # Conversation awareness (R11)
 # --------------------------------------------------------------------------- #
-from galeqea.ai.orchestrator import session_tool_history, suggest_next  # noqa: E402
+from galeqea.ai.orchestrator import session_tool_history  # noqa: E402
 
 
 class _Msg:

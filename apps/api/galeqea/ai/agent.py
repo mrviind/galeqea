@@ -295,7 +295,7 @@ class Agent:
 
         if stream:
             # A tool may opt into driving the workspace by returning a `_ui`
-            # projection. Only that projection crosses the socket — never the
+            # projection. Only that projection crosses the socket, never the
             # whole result. A requirements query can carry fifty items of prose,
             # and pushing raw tool output to every connected browser would both
             # flood the stream and leak fields the tool never meant to publish.
@@ -354,7 +354,7 @@ def _describe_call(name: str, arguments: dict) -> str:
     hint = ""
     for key in ("selection", "title", "query", "test_id_or_key", "run_id", "summary", "search"):
         if safe.get(key):
-            hint = f" — {str(safe[key])[:60]}"
+            hint = f": {str(safe[key])[:60]}"
             break
     return f"{verb}{hint}"
 
@@ -371,8 +371,8 @@ def _call_signature(call: dict) -> str:
 def _repair_note(tool_name: str, result: dict, failure_count: int) -> str:
     """What the model should read first when a tool fails.
 
-    Built from the tool's own recovery hint when it has one — many QE tools
-    return a `guidance` field telling the caller exactly what to do next — and
+    Built from the tool's own recovery hint when it has one (many QE tools
+    return a `guidance` field telling the caller exactly what to do next), and
     escalated when the *same* call has now failed more than once, which is the
     signature of a model stuck repeating a failing action instead of adapting.
     """
@@ -391,12 +391,12 @@ def _repair_note(tool_name: str, result: dict, failure_count: int) -> str:
     return (
         f"[repair] The call to {tool_name} failed: {error}. "
         + (f"{hint} " if hint else "")
-        + "Adapt before trying again — do not repeat the same call unchanged."
+        + "Adapt before trying again. Do not repeat the same call unchanged."
     )
 
 
 def _tool_result_for_model(result: dict, *, repair: str = "") -> str:
-    """Serialise a tool result for the model — and only what the model needs.
+    """Serialise a tool result for the model, and only what the model needs.
 
     Two things happen here that did not before.
 
@@ -430,8 +430,8 @@ def _tool_result_for_model(result: dict, *, repair: str = "") -> str:
         "note": (
             f"This result was {len(encoded)} characters, over the "
             f"{MAX_TOOL_RESULT_CHARS} limit, and has been withheld rather than cut "
-            "mid-structure. Call the tool again with a narrower query — a specific "
-            "ref, a smaller limit, or a filter — instead of guessing at the content."
+            "mid-structure. Call the tool again with a narrower query (a specific "
+            "ref, a smaller limit, or a filter) instead of guessing at the content."
         ),
         # Whatever the tool put in `guidance` is the one field worth its space:
         # it is the tool telling the model what to do next.
@@ -449,7 +449,7 @@ def _describe_result(name: str, result: dict) -> str:
     if "run_id" in result:
         return f"run #{result.get('number', '?')} started"
     # Verdict-carrying tools (review_test, judge_test_against_criteria,
-    # check_run_health) — describe by the verdict/recommendation they returned.
+    # check_run_health) are described by the verdict/recommendation they returned.
     if "verdict" in result:
         extra = (f", {result['uncovered_count']} uncovered" if result.get("uncovered_count") else "")
         return f"{result['verdict']}{extra}"

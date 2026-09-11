@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galeqea.dev/schemas/run-report.schema.json",
+  "title": "GaleQEA run report",
+  "description": "The canonical release report (v2) for a single run, in machine-readable form: executive summary, readiness gate, coverage, accessibility-by-impact, regression delta since the last run, root causes, next actions, and the detailed per-test results (each carrying id/href/ui_href). Served identically by the API endpoints, the CLI, the MCP resource and share.",
+  "type": "object",
+  "required": ["schema_version", "report", "project_id", "href", "run", "readiness", "summary", "cost", "by_test_type", "results"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "exec_summary": {
+      "type": "object",
+      "properties": {
+        "verdict": {"type": "string"},
+        "one_liner": {"type": "string"},
+        "headline_risks": {"type": "array"},
+        "trend": {"type": "object"}
+      }
+    },
+    "since_last_run": {
+      "type": "object",
+      "description": "Regression delta vs the baseline run.",
+      "properties": {
+        "has_baseline": {"type": "boolean"},
+        "baseline_run_number": {"type": ["integer", "null"]},
+        "what_changed": {"type": "string"},
+        "totals": {"type": "object"},
+        "rows": {"type": "array"}
+      }
+    },
+    "coverage": {"type": "object"},
+    "accessibility_by_impact": {"type": "object"},
+    "root_causes": {"type": "array"},
+    "next_actions": {"type": "array", "items": {"type": "string"}},
+    "report": {"const": "run"},
+    "project_id": {"type": "string"},
+    "href": {"type": "string"},
+    "run": {
+      "type": "object",
+      "required": ["id", "number", "status", "duration_ms", "ui_href"],
+      "properties": {
+        "id": {"type": "string"},
+        "number": {"type": "integer"},
+        "title": {"type": "string"},
+        "status": {"type": "string"},
+        "trigger": {"type": "string"},
+        "environment": {"type": "string"},
+        "base_url": {"type": "string"},
+        "git_sha": {"type": "string"},
+        "git_branch": {"type": "string"},
+        "duration_ms": {"type": "integer"},
+        "started_at": {"type": ["string", "null"]},
+        "finished_at": {"type": ["string", "null"]},
+        "ui_href": {"type": "string"}
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "description": "The Go/No-Go gate: each criterion evaluated, with a human-only sign-off.",
+      "required": ["verdict", "criteria"],
+      "properties": {
+        "verdict": {"enum": ["go", "no_go"]},
+        "criteria": {"type": "array"},
+        "failed_criteria": {"type": "array"},
+        "auth_hint": {"type": ["string", "null"]},
+        "signoff": {"type": ["object", "null"]}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total", "passed", "failed", "skipped", "pass_rate"],
+      "properties": {
+        "total": {"type": "integer"},
+        "passed": {"type": "integer"},
+        "failed": {"type": "integer"},
+        "skipped": {"type": "integer"},
+        "pass_rate": {"type": "number"}
+      }
+    },
+    "cost": {
+      "type": "object",
+      "required": ["model_calls", "tokens_used", "cost_estimate_usd", "note"],
+      "properties": {
+        "model_calls": {"type": "integer", "minimum": 0},
+        "tokens_used": {"type": "integer", "minimum": 0},
+        "cost_estimate_usd": {"type": "number", "minimum": 0},
+        "note": {"type": "string"}
+      }
+    },
+    "by_test_type": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["total", "passed", "failed", "skipped"],
+        "properties": {
+          "total": {"type": "integer"},
+          "passed": {"type": "integer"},
+          "failed": {"type": "integer"},
+          "skipped": {"type": "integer"}
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "key", "title", "test_type", "status", "duration_ms", "href", "ui_href"],
+        "properties": {
+          "id": {"type": "string"},
+          "key": {"type": "string"},
+          "title": {"type": "string"},
+          "test_type": {"type": "string"},
+          "status": {"type": "string"},
+          "browser": {"type": "string"},
+          "duration_ms": {"type": "integer"},
+          "classification": {"type": ["string", "null"]},
+          "healed": {"type": "boolean"},
+          "signature": {"type": ["string", "null"]},
+          "error": {
+            "type": ["object", "null"],
+            "properties": {"type": {"type": "string"}, "message": {"type": "string"}}
+          },
+          "requirement_refs": {"type": "array", "items": {"type": "string"}},
+          "steps": {"type": "array"},
+          "href": {"type": "string"},
+          "ui_href": {"type": "string"}
+        }
+      }
+    }
+  }
+}

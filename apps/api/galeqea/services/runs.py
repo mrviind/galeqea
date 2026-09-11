@@ -24,7 +24,6 @@ from ..models.base import utcnow
 log = logging.getLogger("galeqea.runs")
 
 _semaphore: asyncio.Semaphore | None = None
-_tasks: dict[str, asyncio.Task] = {}
 
 
 def _gate() -> asyncio.Semaphore:
@@ -49,13 +48,21 @@ async def start_run(
     parent_run_id: str | None = None,
     git_sha: str = "",
     git_branch: str = "",
+    auth: dict | None = None,
+    headless: bool | None = None,
+    base_url: str = "",
+    rate_limit_rps: float | None = None,
+    rerun_kind: str = "",
+    attempt: int = 0,
 ) -> Run:
     project = db.get(Project, project_id)
     if project is None:
         raise ValueError(f"unknown project {project_id}")
 
     env = environment or project.default_environment or "default"
-    base_url = (project.environments or {}).get(env, "")
+    # A target that isn't a named environment (an ad-hoc URL from a journey) still
+    # needs a base_url on the run, so the report never shows a blank target.
+    base_url = base_url or (project.environments or {}).get(env, "")
 
     number = (
         db.execute(
@@ -81,6 +88,14 @@ async def start_run(
         status=RunStatus.QUEUED,
         git_sha=git_sha,
         git_branch=git_branch,
+        # The sealed session/credentials to replay for this run (see engine.plan
+        # ._inject_auth). Sealed here; unsealed only into the transient plan.
+        # A per-run headless override lets a log-in-for-me run open headed.
+        ci_metadata={**({"auth": auth} if auth else {}),
+                     **({"headless": headless} if headless is not None else {}),
+                     **({"rate_limit_rps": rate_limit_rps} if rate_limit_rps else {}),
+                     **({"rerun_kind": rerun_kind} if rerun_kind else {}),
+                     **({"attempt": attempt} if attempt else {})},
         totals={"total": len(matched), "passed": 0, "failed": 0, "skipped": 0},
     )
     db.add(run)
@@ -121,7 +136,10 @@ async def start_run(
         ))
         return run
 
-    _tasks[run.id] = asyncio.create_task(_dispatch(run.id, project_id))
+    from ..jobs import get_queue
+    job_id = await get_queue().enqueue("run_execute", run_id=run.id, project_id=project_id)
+    run.ci_metadata = {**(run.ci_metadata or {}), "job_id": job_id}
+    db.commit()
     return run
 
 
@@ -159,7 +177,6 @@ async def _dispatch(run_id: str, project_id: str) -> None:
                 payload={"run_id": run_id, "status": "error", "error": str(exc)},
             ))
         finally:
-            _tasks.pop(run_id, None)
             await _post_run(run_id, project_id)
 
 
@@ -169,6 +186,7 @@ async def _post_run(run_id: str, project_id: str) -> None:
     from ..intelligence.anomaly import detect_for_run
     from ..intelligence.selection import learn_from_run
 
+    cycle_finished = None
     with session_scope() as db:
         run = db.get(Run, run_id)
         if run is None:
@@ -177,6 +195,16 @@ async def _post_run(run_id: str, project_id: str) -> None:
         changed = (run.ci_metadata or {}).get("changed_paths") or []
         if changed:
             learn_from_run(db, project_id, run_id, changed)
+        # Roll the run up into its cycle, if it belongs to one.
+        if run.cycle_id:
+            from ..models import Cycle
+            from ..services import release
+            cycle = db.get(Cycle, run.cycle_id)
+            if cycle is not None:
+                finished = release.roll_up_cycle(db, cycle)
+                if finished:
+                    cycle_finished = {"cycle_id": cycle.id, "milestone_id": cycle.milestone_id,
+                                      "name": cycle.name, "counters": cycle.counters}
 
     for anomaly in anomalies:
         await bus.publish(Event(
@@ -184,14 +212,59 @@ async def _post_run(run_id: str, project_id: str) -> None:
             payload=anomaly.as_dict(),
         ))
 
+    if cycle_finished:
+        await bus.publish(Event(
+            type=Ev.CYCLE_FINISHED, project_id=project_id, run_id=run_id,
+            payload=cycle_finished,
+        ))
+
+
+def run_task(run_id: str):
+    """The awaitable executing a run in-process, or None when it runs in a worker
+    (distributed queue). Callers that need to block should use ``wait_for_run``."""
+    from ..jobs import get_queue
+    queue = get_queue()
+    return queue.run_task(run_id) if hasattr(queue, "run_task") else None
+
+
+async def wait_for_run(run_id: str, *, timeout: float = 120.0) -> None:
+    """Block until a run finishes (or the timeout). Awaits the in-process task when
+    there is one; otherwise (distributed worker, or already finished) polls the row."""
+    from ..jobs import get_queue
+    queue = get_queue()
+    task = queue.run_task(run_id) if hasattr(queue, "run_task") else None
+    if task is not None:
+        with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        return
+    # In-process with no live task means the run already finished, so return at once
+    # (never poll, or a stubbed run that never reaches a terminal status would hang).
+    if queue.kind == "inprocess":
+        return
+    from ..db import session_scope
+    _TERMINAL = {RunStatus.PASSED, RunStatus.FAILED, RunStatus.FLAKY, RunStatus.ERROR,
+                 RunStatus.NEEDS_REVIEW, RunStatus.SKIPPED}
+    for _ in range(max(1, int(timeout / 0.5))):
+        with session_scope() as db:
+            run = db.get(Run, run_id)
+            if run is None or run.status in _TERMINAL:
+                return
+        await asyncio.sleep(0.5)
+
 
 def active_runs() -> list[str]:
-    return [rid for rid, task in _tasks.items() if not task.done()]
+    """Run ids executing right now: from the in-process queue, or (on a distributed
+    Postgres queue where runs execute in a worker) from the RUNNING rows in the DB."""
+    from ..jobs import get_queue
+    queue = get_queue()
+    if queue.kind == "inprocess":
+        return queue.running_run_ids()
+    from ..db import session_scope
+    with session_scope() as db:
+        return [r.id for r in db.execute(
+            select(Run.id).where(Run.status == RunStatus.RUNNING)).scalars()]
 
 
 async def shutdown() -> None:
-    for task in list(_tasks.values()):
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    _tasks.clear()
+    from ..jobs import get_queue
+    await get_queue().stop()

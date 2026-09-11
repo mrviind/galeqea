@@ -1,6 +1,6 @@
 """Adversarial tests of the agentic loop itself.
 
-Not "does a tool work" — those are elsewhere. These drive the *loop* through the
+Not "does a tool work"; those are elsewhere. These drive the *loop* through the
 states that break agents in production: a tool that errors mid-plan, a tool that
 files an approval, a model that loops without finishing, a tool that raises, a
 model that hallucinates a tool name. Each asserts the loop degrades into
@@ -132,7 +132,7 @@ def test_an_unknown_tool_returns_the_available_set(db, project):
 
 # --------------------------------------------------------------------------- #
 # A state-changing tool files an approval and the loop surfaces it rather than
-# executing — the gate holds even under agent control.
+# executing; the gate holds even under agent control.
 # --------------------------------------------------------------------------- #
 def test_a_gated_tool_files_an_approval_and_does_not_execute(db, project):
     reg = ToolRegistry()
@@ -149,7 +149,7 @@ def test_a_gated_tool_files_an_approval_and_does_not_execute(db, project):
     agent = Agent(provider=provider, registry=reg, role="orchestrator", system_prompt="t")
     result = _run(agent, db, project)
 
-    assert executed["did"] is False, "a gated tool executed under the agent — the gate failed"
+    assert executed["did"] is False, "a gated tool executed under the agent; the gate failed"
     assert result.pending_approvals, "the approval id was not surfaced"
     assert result.steps[0]["result"]["status"] == "awaiting_approval"
 
@@ -165,7 +165,7 @@ def test_an_endless_model_is_bounded_by_the_step_limit(db, project):
     def again(args, ctx):
         return {"ok": True, "keep_going": True}
 
-    # Every turn asks for the tool again — the model never emits final text.
+    # Every turn asks for the tool again; the model never emits final text.
     provider = Scripted([_tool_call("again")])
     agent = Agent(provider=provider, registry=reg, role="orchestrator", system_prompt="t")
     agent.max_steps = 4

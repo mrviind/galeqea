@@ -1,14 +1,14 @@
 """The first-run on-ramp: point GaleQEA at a URL and test it immediately.
 
-A brand-new user has no requirement document, no recorded session and — in No-AI
-mode — no model to author tests for them. Without an on-ramp their first minute is
+A brand-new user has no requirement document, no recorded session and, in No-AI
+mode, no model to author tests for them. Without an on-ramp their first minute is
 a dead end. This module gives them a real one: they type a URL in the chat (or the
 chat asks for it), and GaleQEA drives a real browser to that URL, checks it loads
-cleanly, and reports what it saw — using the same execution pipeline every other
+cleanly, and reports what it saw, using the same execution pipeline every other
 run uses, with **no model and no manual authoring**.
 
 The smoke check itself is a built-in probe, not AI-authored content, so it does not
-pass through the human approval gate — the gate governs *proposed* changes to a
+pass through the human approval gate; the gate governs *proposed* changes to a
 suite, and this is the product's own fixed diagnostic. It is created directly, the
 way the demo project is seeded, and marked as a deterministic built-in in its
 provenance so its origin is never ambiguous.
@@ -72,7 +72,7 @@ def looks_like_url(text: str) -> bool:
     return find_url(text) is not None
 
 
-# "test my site / app / url" with no URL present — the ask-for-URL trigger.
+# "test my site / app / url" with no URL present: the ask-for-URL trigger.
 WANTS_TO_TEST = re.compile(
     r"\b(test|smoke|check|try|scan|probe)\b.{0,30}\b"
     r"(site|website|web ?app|app|application|url|page|link|something)\b",
@@ -92,14 +92,14 @@ def preview(text: str) -> dict | None:
         return {
             "intent": "test a URL", "confidence": 1.0, "tool": "smoke_test_url",
             "arguments": {"url": target},
-            "explanation": f"Open {target} in a real browser and check it loads — no model.",
+            "explanation": f"Open {target} in a real browser and check it loads. No model needed.",
             "path": "router",
         }
     if WANTS_TO_TEST.search(text or ""):
         return {
             "intent": "test a URL", "confidence": 1.0, "tool": "smoke_test_url",
             "arguments": {},
-            "explanation": "I'll ask which URL to test, then check it loads — no model.",
+            "explanation": "I'll ask which URL to test, then check it loads. No model needed.",
             "path": "router",
         }
     return None
@@ -123,7 +123,7 @@ def ensure_smoke_test(db: Session, project: Project) -> TestCase:
     case = TestCase(
         project_id=project.id,
         key=key,
-        title="Smoke — the site loads without errors",
+        title="Smoke: the site loads without errors",
         description="Built-in first-run check: navigate to the target URL and confirm it renders.",
         status=TestStatus.APPROVED,
         category=TestCategory.AUTOMATED,
@@ -159,7 +159,7 @@ async def run_smoke(
     timeout: float = 90.0,
 ) -> dict:
     """Set the target URL, run the built-in smoke, and return a health report."""
-    from .runs import _tasks, start_run
+    from .runs import run_task, start_run
 
     project = db.get(Project, project_id)
     if project is None:
@@ -174,11 +174,11 @@ async def run_smoke(
         environment=TARGET_ENV,
         trigger="onramp",
         triggered_by=triggered_by,
-        title=f"Smoke check — {target}",
+        title=f"Smoke check: {target}",
     )
 
     # Wait for the background execution to finish so we can report inline.
-    task = _tasks.get(run.id)
+    task = run_task(run.id)
     if task is not None:
         try:
             await asyncio.wait_for(asyncio.shield(task), timeout=timeout)

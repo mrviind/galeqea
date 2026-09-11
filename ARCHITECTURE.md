@@ -10,7 +10,7 @@ them. Where a decision has a cost, the cost is stated.
 A GaleQEA test is a row plus an ordered list of typed steps. Each step carries:
 
 - an **action** from a small, auditable vocabulary (~30 verbs);
-- a **semantic intent** in plain language — *"submit the payment form"*;
+- a **semantic intent** in plain language, such as *"submit the payment form"*;
 - an optional **element reference** into the App Model;
 - a **locator ladder**, ordered most-durable-first.
 
@@ -26,7 +26,7 @@ fails at four things simultaneously:
 
 **The cost:** the step vocabulary is a ceiling. Anything it cannot express needs a
 plugin-provided action or an approved `script` step. That is a real constraint, and
-it is deliberate — an unbounded escape hatch would make every other property here
+it is deliberate. An unbounded escape hatch would make every other property here
 unenforceable.
 
 ---
@@ -35,7 +35,7 @@ unenforceable.
 
 Most self-healing patches a *selector inside a test*. If forty tests reference the
 same "Pay" button, a redesign breaks forty tests and produces forty independent
-heals — forty analyses, forty reviews, forty chances to disagree.
+heals: forty analyses, forty reviews, forty chances to disagree.
 
 GaleQEA maintains a persistent **App Model**: a graph of screens and elements, where
 each element owns its intent, role, accessible name, attribute fingerprint and
@@ -52,8 +52,8 @@ The API reports `tests_repaired` on apply, because that number is the point.
 Two sources, both automatic.
 
 **Ordinary runs.** Every step that resolves an element reports
-what it found — role, accessible name, tag, fingerprint, and the locator that
-actually worked — and every navigation reports the screen. The server upserts
+what it found (role, accessible name, tag, fingerprint, and the locator that
+actually worked), and every navigation reports the screen. The server upserts
 those observations and, when a step's own locator is *already* in the element's
 ladder, binds the step to the element. That binding is deliberately restricted
 to the case where it is provably a no-op: the same element resolves by the same
@@ -70,8 +70,8 @@ RE-RUN: both pass, healed=False
 ```
 
 **This was a real hole, not a design note.** The first version of this document
-made the "heal once, repair many" argument while nothing populated the model —
-in practice it was always empty, and healing silently degraded to the per-test
+made the "heal once, repair many" argument while nothing populated the model.
+In practice it was always empty, and healing silently degraded to the per-test
 patching the model exists to avoid. Two follow-on defects came out of fixing it:
 heal proposals were filed once *per test* (recreating the churn inside the
 review queue), and `tests_repaired` counted heal events rather than the tests
@@ -80,7 +80,7 @@ saves. Both are covered in `tests/test_healing.py`.
 
 **Session recording**, which is the more interesting of the two. The in-page
 capture script computes the ladder and fingerprint in the page, so the observation
-it emits is the same shape a resolved step emits — which means a recorded test
+it emits is the same shape a resolved step emits, which means a recorded test
 enters the model *at the moment it is authored*, not on its first successful run.
 That inverts the usual order: a recorded test is repairable before it has ever
 been executed, and a UI churn that lands between recording and the first run is
@@ -107,7 +107,7 @@ Two properties follow, and both are load-bearing:
 
 - **A healthy suite never pays for healing.** Tiers 1–3 run only after a real miss,
   so the common path stays at native Playwright speed.
-- **Healing works with no model configured.** Tier 1 rescues most real breakage —
+- **Healing works with no model configured.** Tier 1 rescues most real breakage:
   renamed test ids, restructured markup, changed classes.
 
 ### The scoring bug worth knowing about
@@ -127,7 +127,7 @@ ancestry  absent    0.03 × 0.0 = 0.00     ← never captured
                     total 0.57  → below the 0.72 floor → refused
 ```
 
-The correct element was an obvious winner — the runner-up scored 0.27 — but three
+The correct element was an obvious winner (the runner-up scored 0.27), but three
 signals scored zero because they were **absent from the fingerprint**, not because
 they disagreed. Missing evidence was being counted as evidence against, which made a
 sparse fingerprint permanently unhealable.
@@ -159,13 +159,13 @@ Three properties:
    and files a request instead of executing. The applier is unreachable from any
    state other than `APPROVED`.
 2. **The rule cannot be configured away.** `GALEQEA_ALLOW_AI_SELF_APPROVAL` exists
-   only so that setting it raises an error — a deliberate tripwire for anyone who
+   only so that setting it raises an error, a deliberate tripwire for anyone who
    goes looking for the flag.
 3. **It holds across every entry point.** The MCP server, the CLI and the HTTP API
    all route through the same registry, so an external MCP client gets the gate too.
    Verified in `test_governance.py`.
 
-Actions are risk-tiered, and anything unlisted defaults to `HIGH` — a newly added
+Actions are risk-tiered, and anything unlisted defaults to `HIGH`: a newly added
 action fails closed, not open.
 
 ---
@@ -176,13 +176,13 @@ action fails closed, not open.
 work to make that genuinely useful, rather than a disabled shell, is concentrated in
 three places:
 
-- **`ai/router.py`** — a deterministic plain-English command router. Most of what
+- **`ai/router.py`**: a deterministic plain-English command router. Most of what
   people type at a test platform has a recognisable shape, and matching it with
   rules is faster, free, offline and perfectly predictable. It runs *first* even
   when a model is configured, saving a round trip on the common path.
-- **`intelligence/`** — flakiness, triage, anomaly detection, selection and the
+- **`intelligence/`**: flakiness, triage, anomaly detection, selection and the
   first RCA pass are all statistical. No model was ever needed for them.
-- **`ai/embeddings.py`** — a deterministic hashed n-gram encoder backs semantic
+- **`ai/embeddings.py`**: a deterministic hashed n-gram encoder backs semantic
   de-duplication and memory recall when no embedding provider exists. It is weaker
   than a learned model at paraphrase, and good enough for the near-duplicate
   detection that actually matters.
@@ -207,7 +207,7 @@ runner  → handoff_request { reason, url }        ← parks until a human resum
 
 This is what makes intent-based healing and pause-and-attach possible without
 pushing secrets or policy into the browser process. It also means the runner can be
-replaced wholesale — the protocol is the contract.
+replaced wholesale: the protocol is the contract.
 
 **Two bugs this shape produced during development,** both worth recording:
 
@@ -224,7 +224,7 @@ replaced wholesale — the protocol is the contract.
 ## 7. A run that executed nothing is never green
 
 The single most damaging bug a test platform can have is reporting a pass when
-nothing ran — it manufactures confidence out of an infrastructure failure. During
+nothing ran. It manufactures confidence out of an infrastructure failure. During
 development a wrong runner path produced exactly that: zero results, status
 `passed`.
 
@@ -244,7 +244,7 @@ result, and marks it `ERROR` with the runner's exit code and stderr tail otherwi
 - **All timestamps use `UTCDateTime`**, a `TypeDecorator` that normalises to
   timezone-aware UTC in both directions. SQLite returns naive datetimes even for
   `DateTime(timezone=True)`, and mixing them raises *"can't subtract offset-naive and
-  offset-aware datetimes"* at the worst possible moment — mid-run finalisation.
+  offset-aware datetimes"* at the worst possible moment, mid-run finalisation.
   Normalising at the column boundary means no call site has to think about it.
 - **Embeddings are JSON columns.** pgvector is used when available; the JSON
   fallback keeps SQLite installs fully functional.
@@ -255,25 +255,25 @@ result, and marks it `ERROR` with the runner's exit code and stderr tail otherwi
 
 Exploration answers a different question from a test. A test asks *"does this
 still do what we agreed?"*; exploration asks *"what does this do that we never
-agreed about?"* — so its output is findings to triage, not a verdict, and it is
+agreed about?"*, so its output is findings to triage, not a verdict, and it is
 kept out of the pass-rate statistics where it would mean nothing.
 
 It reuses the runner protocol exactly: the runner observes and acts, the server
-decides. A whole new mode needed no new transport — the runner asks
+decides. A whole new mode needed no new transport: the runner asks
 `explore_decide` the same way it asks `heal_request`.
 
 **Two strategies, one loop.** The deterministic strategy is the default and
 needs no model: prefer untouched controls, probe empty inputs with boundary
 values, follow links toward unseen screens, back out of dead ends. It cannot
 judge whether a message is confusing, but it finds real defects the same way
-every time — which a model cannot promise. The model strategy uses the same loop
+every time, which a model cannot promise. The model strategy uses the same loop
 with the next action chosen from a *server-supplied candidate list*; it can
 never invent a selector, which bounds both hallucination and page-borne
 injection.
 
 **Two tiers of refusal.** `DESTRUCTIVE` (delete, revoke, sign out) is never
 clicked, in any environment. `TRANSACTIONAL` (pay, place order, transfer) is
-blocked by default but unlockable per session — on staging, the submit button is
+blocked by default but unlockable per session. On staging, the submit button is
 precisely where the interesting behaviour lives, and refusing it there means
 exploration only ever sees the form. Whatever is skipped is *reported*, because
 a coverage hole the user cannot see is worse than one they can. The refusal is
@@ -286,14 +286,14 @@ reading it:
   click, which looks like a dead end, which suggests backing out. That loop
   consumed 15 of an 18-step budget on the first run. Leaving the application now
   returns to the base URL, and three consecutive backtracks restart from the top.
-- `about:blank` was also raising a *dead end* finding — a false positive that
+- `about:blank` was also raising a *dead end* finding, a false positive that
   teaches people to ignore the list.
 - Findings needed de-duplication at three levels: within a batch (two unlabelled
   inputs are one `form-label` finding), within a session, and across sessions
   (exploring weekly would otherwise file the same defect fifty-two times).
 
 **A finding is not a rumour.** Each one carries the ordered actions that reach
-it, so promoting it to a regression test is a rendering step — the trail is
+it, so promoting it to a regression test is a rendering step: the trail is
 already a list of steps. Promotion is idempotent, because a double-click
 otherwise produced two identical tests.
 
@@ -312,7 +312,7 @@ structural: lost_controls = ["textbox: Card number"]   -> severity: breaking
 Under one per cent. Any pixel threshold loose enough to tolerate anti-aliasing
 is also loose enough to miss that, which is why pixel-only visual testing gets
 muted within a month. The accessibility tree, by contrast, says plainly that an
-interactive control disappeared — so structural comparison decides severity and
+interactive control disappeared, so structural comparison decides severity and
 pixels supply the *location*.
 
 **Regions, not confetti.** The image is divided into a 16px grid; a cell counts
@@ -322,7 +322,7 @@ tolerance absorbs sub-pixel rendering differences between runs on the same
 machine.
 
 **Two parser bugs worth recording.** Playwright's aria snapshot emits two
-shapes — `- textbox "Card number"` and `- text: Your order is confirmed`. The
+shapes: `- textbox "Card number"` and `- text: Your order is confirmed`. The
 first version read only the quoted form, so a paragraph changing from "Your
 order is confirmed" to "Your order failed" registered as *no structural change
 at all*. The second: `- heading "Acme Checkout" [level=1]` failed to parse
@@ -330,7 +330,7 @@ because the trailing attribute broke the end anchor, silently dropping every
 heading from the diff.
 
 **Nothing was reviewable before this.** `record_snapshot` computed a diff,
-returned it, and dropped it — so the feature was unreachable. Comparisons are
+returned it, and dropped it, so the feature was unreachable. Comparisons are
 now rows, and an unchanged screen is stored as `auto_passed` rather than not
 stored at all, so "did this screen get checked?" has an answer.
 
@@ -342,8 +342,8 @@ destroy the evidence of what it replaced.
 ## 11. Two more ways in, one review board
 
 Requirement ingestion was the first route into a suite. Two more were added, and
-neither of them needed a new transport, a new approval action or a new test model
-— which is the argument for having made tests data in the first place.
+neither of them needed a new transport, a new approval action or a new test model,
+which is the argument for having made tests data in the first place.
 
 ### Session recording rides the run protocol
 
@@ -366,8 +366,8 @@ The capture script is the part worth reading. Three decisions carry it:
   mean the value existed in a buffer, an event and a log first.
 
 Compression happens on the server, in `engine/record.py`, because it is a set of
-*judgement calls* — which click was only a focus, which navigation was an outcome
-— and judgement calls belong where they can be tested and argued with. Both the
+*judgement calls* (which click was only a focus, which navigation was an outcome),
+and judgement calls belong where they can be tested and argued with. Both the
 raw stream and the compressed proposal are stored, so a compression bug is
 falsifiable rather than invisible.
 
@@ -375,7 +375,7 @@ falsifiable rather than invisible.
 initial navigation was emitted twice (the explicit post-`goto` emit raced
 `framenavigated`, and the duplicate carried the post-redirect URL, so it looked
 like two different navigations rather than one); and the generated test was named
-after the last thing clicked, which is usually some incidental navigation — the
+after the last thing clicked, which is usually some incidental navigation. The
 session ended on "Account settings" and the test covering a payment was named
 after it. Buttons now outrank links, and the last one wins.
 
@@ -386,8 +386,8 @@ hands them to the same `intelligence/testdata.py` the requirement path uses. No
 model is involved, and none is needed: the document states which parameters are
 required, what their bounds are and what each response must contain.
 
-The generated cases file as `test.create` proposals — the existing applier, not a
-new one — so an API test is reviewed, versioned, exported and healed exactly like
+The generated cases file as `test.create` proposals (the existing applier, not a
+new one), so an API test is reviewed, versioned, exported and healed exactly like
 a UI test.
 
 Three judgement calls are recorded in code because they are the ones that turn a
@@ -400,7 +400,7 @@ generated suite from useful into dangerous:
    a URL inside it lets the document choose what the process connects to.
 3. **Only assert non-reflection for HTML responses.** A JSON API that echoes a
    stored value back is behaving correctly. Asserting against that would have
-   failed conformant services — a bug in the first version of this generator,
+   failed conformant services: a bug in the first version of this generator,
    caught by reading the output rather than by a test.
 
 The runner's `api_request` step was widened to match: status sets rather than a
@@ -418,11 +418,11 @@ Stated plainly, because a list of features without them is marketing:
 
 - **Plugin sandboxing is cooperative.** In-process Python cannot be a real security
   boundary. Plugins install disabled, capabilities are granted explicitly, and a
-  changed checksum revokes the grant — but an untrusted plugin should run out of
+  changed checksum revokes the grant, but an untrusted plugin should run out of
   process. The `external` transport exists for that and is not yet implemented.
 - **Exploration cannot judge meaning without a model.** The deterministic
   strategy finds broken links, console errors, 5xx responses, unlabelled
-  controls, dead ends and silently discarded input — facts. It cannot tell you
+  controls, dead ends and silently discarded input: facts. It cannot tell you
   an error message is *confusing*. That needs the model strategy.
 - **OCR is not bundled.** Image-only requirement documents are reported as needing
   OCR rather than silently ingested empty.
@@ -431,8 +431,8 @@ Stated plainly, because a list of features without them is marketing:
   in the same review item. Per-element baselines would scope it properly.
 - **Predictive selection learns only from failures.** A passing test says nothing
   about whether it covers a change, so correlations build slowly on a healthy suite.
-- **Recording covers one window.** A flow that opens a second window — a payment
-  pop-up, an OAuth handshake — is captured up to that point and then annotated
+- **Recording covers one window.** A flow that opens a second window (a payment
+  pop-up, an OAuth handshake) is captured up to that point and then annotated
   with a note saying the rest needs authoring by hand. Driving two contexts from
   one recorded step list is not modelled.
 - **Recorded assertions are opt-in.** Alt+click is the only way to say "this must

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galeqea.dev/schemas/release-report.schema.json",
+  "title": "GaleQEA release report",
+  "description": "The release view of a milestone: its readiness verdict against exit criteria and the live release metrics. Deterministic; no model.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "milestone",
+    "readiness",
+    "metrics"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "milestone": {
+      "type": "object",
+      "required": ["id", "name", "version", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "status": {"type": "string", "enum": ["planned", "active", "released", "archived"]},
+        "target_date": {"type": ["string", "null"], "format": "date-time"},
+        "signoff": {
+          "type": ["object", "null"],
+          "required": ["by", "at", "decision"],
+          "properties": {
+            "by": {"type": "string"},
+            "by_id": {"type": "string"},
+            "at": {"type": "string", "format": "date-time"},
+            "decision": {"type": "string", "enum": ["go", "no_go"]},
+            "note": {"type": "string"},
+            "override": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "required": ["verdict", "criteria"],
+      "properties": {
+        "verdict": {"type": "string", "enum": ["go", "no_go"]},
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["metric", "op", "target", "actual", "met"],
+            "properties": {
+              "metric": {"type": "string"},
+              "op": {"type": "string", "enum": [">=", "<=", ">", "<", "==", "="]},
+              "target": {"type": ["number", "integer"]},
+              "actual": {"type": ["number", "integer", "null"]},
+              "met": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "counts",
+        "execution_progress",
+        "pass_rate",
+        "open_blockers",
+        "requirement_coverage",
+        "tested_coverage",
+        "p1_requirement_coverage",
+        "automation_ratio",
+        "defect_density",
+        "flaky_rate",
+        "mttr_ms",
+        "effort_variance"
+      ],
+      "properties": {
+        "milestone": {"type": "object"},
+        "counts": {
+          "type": "object",
+          "required": ["planned", "executed", "passed", "failed", "cycles", "requirements", "cases", "defects"],
+          "properties": {
+            "planned": {"type": "integer"},
+            "executed": {"type": "integer"},
+            "passed": {"type": "integer"},
+            "failed": {"type": "integer"},
+            "cycles": {"type": "integer"},
+            "requirements": {"type": "integer"},
+            "cases": {"type": "integer"},
+            "defects": {"type": "integer"}
+          }
+        },
+        "execution_progress": {"type": "number", "minimum": 0, "maximum": 1},
+        "pass_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "open_blockers": {"type": "integer", "minimum": 0},
+        "requirement_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "tested_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "p1_requirement_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "automation_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+        "defect_density": {"type": "number", "minimum": 0},
+        "flaky_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "mttr_ms": {"type": ["number", "integer"], "minimum": 0},
+        "effort_variance": {"type": "number"}
+      }
+    }
+  }
+}

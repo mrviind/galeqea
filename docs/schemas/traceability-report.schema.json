@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galeqea.dev/schemas/traceability-report.schema.json",
+  "title": "GaleQEA traceability report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report",
+    "project_id",
+    "href",
+    "summary",
+    "requirements"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "report": {
+      "const": "traceability"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "href": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total",
+        "covered",
+        "uncovered"
+      ]
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "href",
+          "ui_href",
+          "ref",
+          "covered",
+          "tests"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "ui_href": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

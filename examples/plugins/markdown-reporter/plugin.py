@@ -40,7 +40,7 @@ class MarkdownReporter(Reporter):
         totals = run.get("totals") or {}
 
         lines = [
-            f"# Run #{run.get('number')} — {run.get('status')}",
+            f"# Run #{run.get('number')}: {run.get('status')}",
             "",
             f"*{datetime.now():%Y-%m-%d %H:%M}* · environment `{run.get('environment')}` "
             f"· {run.get('duration_ms', 0) / 1000:.1f}s",
@@ -56,7 +56,7 @@ class MarkdownReporter(Reporter):
 
         # New failures first: known and flaky failures are noise for triage.
         for bucket, heading in [
-            ("new", "New failures — start here"),
+            ("new", "New failures: start here"),
             ("test_defect", "Test-side defects"),
             ("known", "Known failures"),
             ("flaky", "Flaky"),
@@ -67,7 +67,7 @@ class MarkdownReporter(Reporter):
                 continue
             lines += [f"## {heading} ({len(entries)})", ""]
             for entry in entries:
-                lines.append(f"- **{entry.get('key')}** — {entry.get('title', '')}")
+                lines.append(f"- **{entry.get('key')}**: {entry.get('title', '')}")
                 if entry.get("reason"):
                     lines.append(f"  - _{entry['reason']}_")
                 if entry.get("error"):

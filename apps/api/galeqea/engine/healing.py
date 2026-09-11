@@ -31,8 +31,10 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..ai import keys
 from ..ai.embeddings import cosine, local_embed
 from ..ai.providers.base import LLMProvider, Message, NoAIModeError, ProviderError, Role
+from ..config import settings
 from ..models import AppElement, HealEvent
 from ..models.base import utcnow
 
@@ -97,6 +99,19 @@ class HealingEngine:
 
         element = self.db.get(AppElement, element_id) if element_id else None
 
+        # --- Tier 0: the step cache --------------------------------------- #
+        # If we've resolved this intent on this page shape before, reuse the ladder
+        # with no model and no scoring: the zero-token re-run (WO#8-B).
+        from . import step_cache as _sc
+        cached = _sc.lookup(self.db, self.project_id, intent=intent,
+                            action=request.get("action", ""), url=request.get("url", ""),
+                            aria_state=request.get("ariaSnapshot", ""))
+        if cached and cached.ladder:
+            return HealOutcome(ok=True, locator=cached.ladder[0], strategy="cache",
+                               score=1.0, candidates=[],
+                               reason="resolved from the step cache, no model needed",
+                               evidence={"cache": True, "provenance": cached.provenance})
+
         # --- Tier 1: deterministic fingerprint scoring -------------------- #
         ranked = self._rank(candidates, element=element, intent=intent)
         best = ranked[0]
@@ -139,9 +154,39 @@ class HealingEngine:
         # --- Tier 2: semantic re-resolution ------------------------------- #
         plausible = [c for c in ranked if c["score"] >= FINGERPRINT_FLOOR][:8]
         if plausible and self.provider is not None:
+            # Per-role ceiling (WO#8-C): a grounder call that would run past its
+            # per-call token cap stops and asks rather than spending. The Tier-0
+            # cache above already returned for free, so a ceiling never blocks a
+            # zero-token re-run, only a genuine model call.
+            try:
+                self._check_ceiling(request)
+            except keys.RoleCeilingExceeded as exc:
+                if best["score"] >= FINGERPRINT_ACCEPT:
+                    outcome = HealOutcome(
+                        ok=True, locator=best["suggested"], strategy="fingerprint",
+                        score=best["score"],
+                        reason=f"best attribute match; grounder ceiling reached ({exc})",
+                        candidates=ranked[:5],
+                    )
+                    self._record(request, outcome, element)
+                    return outcome
+                outcome = HealOutcome(
+                    ok=False, strategy="ceiling", score=best["score"], reason=str(exc),
+                    candidates=ranked[:5],
+                    evidence={"ceiling": exc.ceiling, "est_tokens": exc.est_tokens},
+                )
+                self._record(request, outcome, element)
+                return outcome
             try:
                 outcome = await self._semantic(request, plausible, intent)
                 if outcome.ok:
+                    # Write the model's resolution back so the next run hits the cache.
+                    _sc.write_back(self.db, self.project_id, intent=intent,
+                                   action=request.get("action", ""), url=request.get("url", ""),
+                                   aria_state=request.get("ariaSnapshot", ""),
+                                   ladder=[outcome.locator] if outcome.locator else [],
+                                   model=getattr(self.provider, "model", ""),
+                                   strategy=outcome.strategy)
                     self._record(request, outcome, element)
                     return outcome
             except (NoAIModeError, ProviderError) as exc:
@@ -182,6 +227,20 @@ class HealingEngine:
         return outcome
 
     # ------------------------------------------------------------------ #
+    #: Rough per-call prompt scaffold (system + intent + candidate list), on top
+    #: of the trimmed page state, so a ceiling bounds the whole call not just state.
+    _PROMPT_SCAFFOLD_TOKENS = 400
+
+    def _check_ceiling(self, request: dict) -> None:
+        """Raise RoleCeilingExceeded if this grounder call would exceed its cap."""
+        est = int(request.get("state_tokens") or 0)
+        if not est:
+            est = len(request.get("ariaSnapshot", "") or "") // 4
+        keys.check_role_ceiling(
+            self.db, provider=settings.provider, project_id=self.project_id,
+            bucket="grounder", est_tokens=est + self._PROMPT_SCAFFOLD_TOKENS,
+        )
+
     def _rank(
         self, candidates: list[dict], *, element: AppElement | None, intent: str
     ) -> list[dict]:

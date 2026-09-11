@@ -7,14 +7,19 @@ import asyncio
 import pytest
 
 from galeqea.ai.plan_gate import (
-    PLAN_KEY, classify_reply, clear_plan, execute_plan, pending_plan,
-    stash_plan, summarise_execution,
+    PLAN_KEY,
+    classify_reply,
+    clear_plan,
+    execute_plan,
+    pending_plan,
+    stash_plan,
+    summarise_execution,
 )
 from galeqea.ai.tools import RiskTier, ToolContext, ToolRegistry
 
 
 class _Session:
-    """A stand-in for ChatSession — only .context is touched by the gate."""
+    """A stand-in for ChatSession; only .context is touched by the gate."""
     def __init__(self):
         self.context = {}
         self.project_id = "p"

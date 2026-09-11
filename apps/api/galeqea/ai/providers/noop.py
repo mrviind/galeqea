@@ -12,12 +12,11 @@ from __future__ import annotations
 from .base import Completion, LLMProvider, Message, NoAIModeError, ToolSpec
 
 MESSAGE = (
-    "GaleQEA is running in No-AI mode, so this action needs a model that is not "
-    "configured. Everything that does not require a model still works - authoring, "
-    "running, scheduling, reporting, rule-based healing and failure triage. "
-    "To enable AI features open Settings → Model and choose one of: an API key for "
-    "any provider, a local endpoint (Ollama or OpenAI-compatible) for a fully "
-    "offline setup, or the local Claude Code bridge."
+    "That needs a model, and none is connected yet. The mechanical layer still runs "
+    "without one - running built tests, deterministic healing, scheduling, reporting "
+    "and failure triage - so re-runs stay free. To let the agent explore, plan, "
+    "generate and reason, open Settings → Model and connect one: any provider's API "
+    "key, or a local endpoint (Ollama or OpenAI-compatible) for a fully offline setup."
 )
 
 

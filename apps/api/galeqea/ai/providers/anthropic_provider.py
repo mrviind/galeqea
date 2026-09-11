@@ -151,8 +151,8 @@ class AnthropicProvider(LLMProvider):
           non-strict and is validated locally instead.
         * **Input examples** go through when a tool declares them.
         * **A cache breakpoint on the last tool.** Tool definitions are the
-          largest stable prefix of every request — 25 schemas that do not change
-          between turns — and a single ``cache_control`` marker on the final one
+          largest stable prefix of every request: 25 schemas that do not change
+          between turns. A single ``cache_control`` marker on the final one
           caches all of them. Without it the whole block is re-billed at full
           price on every turn of every conversation.
         """
@@ -177,7 +177,7 @@ class AnthropicProvider(LLMProvider):
 
         The persona is identical on every turn; marking it caches it. The
         marker goes on the system block *and* the last tool, because the two
-        together form the stable prefix — a breakpoint on only one of them
+        together form the stable prefix, and a breakpoint on only one of them
         caches only up to that point.
         """
         return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]

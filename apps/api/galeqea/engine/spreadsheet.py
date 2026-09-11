@@ -90,7 +90,7 @@ def extract(data: bytes, filename: str = "") -> SheetResult:
     if filename.lower().endswith(".xls"):
         return SheetResult(warnings=[
             "This is a legacy .xls file, which openpyxl cannot read. Re-save it as "
-            ".xlsx and upload again — no data is lost in that conversion."
+            ".xlsx and upload again. No data is lost in that conversion."
         ])
 
     try:

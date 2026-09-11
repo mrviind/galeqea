@@ -2,7 +2,7 @@
 
 ``propose_plan`` (the tool) lays out a sequence of tool calls and returns it for
 the user to see. This module is the other half: it remembers that plan on the
-conversation, recognises the user's reply to it — proceed, stop, or amend — and,
+conversation, recognises the user's reply to it (proceed, stop, or amend) and,
 on confirmation, executes the plan's steps one at a time.
 
 Why a deterministic gate rather than leaving it to the model:
@@ -53,7 +53,7 @@ class GateOutcome:
 def stash_plan(session, plan: dict) -> None:
     """Remember a freshly proposed plan on the conversation.
 
-    Stores only what confirmation needs — the goal and the ordered steps — not
+    Stores only what confirmation needs (the goal and the ordered steps), not
     the whole tool result. A plan the user never answers is simply overwritten
     by the next one, so a stale plan cannot be confirmed by accident later.
     """
@@ -85,8 +85,8 @@ def classify_reply(text: str, has_pending: bool) -> str:
     """proceed | stop | amend | none.
 
     ``amend`` is the important middle case: while a plan is pending, a message
-    that is neither a clear yes nor a clear no is a *revision* — the user wants
-    something different — so the pending plan is dropped and the message handled
+    that is neither a clear yes nor a clear no is a *revision*: the user wants
+    something different, so the pending plan is dropped and the message handled
     fresh, rather than being mistaken for confirmation.
     """
     if not has_pending:
@@ -134,14 +134,14 @@ def summarise_execution(plan: dict, executed: list[dict]) -> str:
     if last and last.get("halted") == "awaiting_approval":
         return (
             f"Ran {done} of {total} planned steps. Step {done} ({last['tool']}) needs your "
-            f"approval before it takes effect — it is queued for review. The remaining "
+            f"approval before it takes effect, so it is queued for review. The remaining "
             f"{total - done} step(s) are paused until you decide."
         )
     if last and last.get("halted") == "error":
         err = last["result"].get("error", "an error")
         return (
             f"Ran {done} of {total} planned steps. Step {done} ({last['tool']}) failed: {err}. "
-            f"I stopped rather than continue on a failed step — tell me how to proceed."
+            f"I stopped rather than continue on a failed step. Tell me how to proceed."
         )
     ok = sum(1 for e in executed if e["ok"])
     return f"Completed the plan: {ok} of {total} steps ran successfully."

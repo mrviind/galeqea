@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "galeqea",
+      "credentials": [
+        { "accessKey": "galeqea", "secretKey": "galeqea-secret" }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

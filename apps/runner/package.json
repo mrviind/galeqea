@@ -5,13 +5,17 @@
   "type": "module",
   "description": "GaleQEA Playwright execution engine",
   "license": "Apache-2.0",
-  "bin": { "galeqea-runner": "./src/cli.mjs" },
+  "bin": {
+    "galeqea-runner": "./src/cli.mjs"
+  },
   "scripts": {
     "install-browsers": "playwright install chromium",
     "install-browsers:all": "playwright install",
-    "smoke": "node src/cli.mjs --self-test"
+    "smoke": "node src/cli.mjs --self-test",
+    "test": "node --test \"src/**/*.test.mjs\""
   },
   "dependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "playwright": "^1.49.0"
   }
 }

@@ -3,8 +3,8 @@ import { escapeHtml } from './highlight';
 /**
  * A small Markdown renderer for the Requirements pane.
  *
- * Deliberately not a library. The pane renders one known producer — the
- * `query_requirements` tool — which emits headings, paragraphs, ordered and
+ * Deliberately not a library. The pane renders one known producer, the
+ * `query_requirements` tool, which emits headings, paragraphs, ordered and
  * unordered lists, blockquotes, inline code and bold. Pulling in a full parser
  * plus a sanitiser for that subset costs more bundle than it saves in code, and
  * every feature it adds is a feature nobody validates.
@@ -88,6 +88,7 @@ export function renderMarkdown(source: string): string {
 function inline(text: string): string {
   return escapeHtml(text)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
 }

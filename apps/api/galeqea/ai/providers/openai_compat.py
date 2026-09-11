@@ -84,7 +84,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 # Anthropic's tool_result does, so a failed tool is otherwise
                 # indistinguishable from a success whose content happens to say
                 # "error". Prefixing the content is the documented way to give
-                # the model an unmissable signal — matching the Anthropic path.
+                # the model an unmissable signal, matching the Anthropic path.
                 content = msg.content
                 if msg.is_error and not content.startswith("[tool error]"):
                     content = "[tool error] " + content
@@ -340,7 +340,11 @@ class OllamaProvider(OpenAICompatibleProvider):
 
     name = "ollama"
 
-    def __init__(self, *, model: str = "llama3.1", base_url: str = "", **opts):
+    def __init__(self, *, model: str = "llama3.1", base_url: str = "", api_key: str = "", **opts):
+        # api_key is accepted (every provider is built with one by build_provider)
+        # and ignored - Ollama authenticates with nothing - rather than left to
+        # fall into **opts, where it would collide with the api_key="" below.
+        del api_key
         super().__init__(
             model=model,
             api_key="",

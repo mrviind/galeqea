@@ -25,7 +25,7 @@ def test_the_pack_registers_into_the_canonical_registry():
     """One registry, not two.
 
     A second registry would fork the approval gate, the schema validation and
-    the MCP surface — tools would appear in the chat but not over MCP, and the
+    the MCP surface: tools would appear in the chat but not over MCP, and the
     two would drift the first time somebody added one.
     """
     names = {t.name for t in registry.all()}
@@ -125,7 +125,7 @@ def test_every_class_member_is_a_valid_typescript_identifier(generated):
 
     The first version of this generator picked the *value* out of
     ``enters "4242424242424242" into the "Card number" field`` and emitted
-    ``readonly 4242424242424242: Locator`` — a file that does not parse.
+    ``readonly 4242424242424242: Locator``, which is a file that does not parse.
     """
     members = re.findall(r"^\s+readonly (\S+):", generated["page_object"]["code"], re.MULTILINE)
     assert members
@@ -139,7 +139,7 @@ def test_the_element_is_located_not_the_value_typed_into_it():
     code = result["page_object"]["code"]
     assert "getByLabel('Email address')" in code
     assert "getByLabel('ravi@example.com')" not in code
-    # The value still gets typed — it just is not mistaken for the target.
+    # The value still gets typed; it just is not mistaken for the target.
     assert ".fill('ravi@example.com')" in code
 
 
@@ -206,7 +206,7 @@ def test_the_default_persona_is_the_principal_sdet():
 # UI projections
 # --------------------------------------------------------------------------- #
 def test_tools_publish_only_a_bounded_ui_projection(db, project):
-    """`_ui` is what crosses the socket — never the whole tool result.
+    """`_ui` is what crosses the socket, never the whole tool result.
 
     A requirements query can carry fifty items of prose. Pushing raw tool output
     to every connected browser would flood the stream and publish fields the
@@ -234,7 +234,7 @@ def test_the_requirements_projection_renders_as_markdown(db, project):
 
     ctx = ToolContext(db=db, project_id=project.id, user=None, actor_kind="agent")
     markdown = query_requirements({"feature": "card"}, ctx)["_ui"]["markdown"]
-    assert "## REQ-020 — Card is accepted" in markdown
+    assert "## REQ-020: Card is accepted" in markdown
     assert "1. Luhn-valid cards are accepted" in markdown
 
 

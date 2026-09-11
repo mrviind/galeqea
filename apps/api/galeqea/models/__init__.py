@@ -6,6 +6,7 @@ from .appmodel import (
     AppScreen,
     AppTransition,
     HealEvent,
+    StepCache,
     VisualBaseline,
     VisualComparison,
 )
@@ -20,7 +21,14 @@ from .governance import (
     VaultSecret,
 )
 from .identity import RANK, ApiToken, Project, ProjectMember, Role, User
-from .integrations import IntegrationConnection, Notification, PluginRecord
+from .integrations import (
+    IntegrationConnection,
+    JiraIssueMap,
+    Notification,
+    PluginRecord,
+    ReportPage,
+    RunExport,
+)
 from .intel import (
     AnomalyRecord,
     CoverageSnapshot,
@@ -33,12 +41,25 @@ from .intel import (
     TestStat,
     UsageLedger,
 )
+from .journey import STAGE_ORDER, Journey, JourneyStage, JourneyStatus
+from .release import (
+    Cycle,
+    CycleStatus,
+    DefectLink,
+    DefectMap,
+    Environment,
+    Milestone,
+    MilestoneStatus,
+    SharedStep,
+    TestPlan,
+)
 from .testing import (
     TERMINAL_RUN_STATES,
     Artifact,
     DocKind,
     RequirementDoc,
     RequirementItem,
+    RequirementRule,
     Run,
     RunStatus,
     RunStepRecord,
@@ -53,18 +74,24 @@ from .testing import (
     TestSuite,
     TestVersion,
 )
+from .webhooks import WEBHOOK_EVENTS, WebhookDelivery, WebhookEndpoint
 
 __all__ = [
     "RANK", "TERMINAL_RUN_STATES",
-    "AgentRole", "AgentTrace", "AnomalyRecord", "ApiToken", "AppElement", "AppScreen",
+    "AgentRole", "AgentTrace", "AnomalyRecord", "ApiToken", "AppElement", "AppScreen", "StepCache",
     "AppTransition", "ApprovalBatch", "ApprovalRequest", "ApprovalStatus", "Artifact",
     "AuditEvent", "ChatMessage", "ChatSession", "CoverageSnapshot", "DocKind",
     "ExplorationFinding", "ExplorationSession", "RecordingSession",
-    "FailureSignature", "HealEvent", "IdMixin", "IntegrationConnection", "JSONish",
+    "FailureSignature", "HealEvent", "IdMixin", "IntegrationConnection", "JiraIssueMap", "JSONish", "ReportPage", "RunExport",
     "JudgeVerdict", "MemoryItem", "Notification", "PluginRecord", "PolicyRule", "Project",
-    "ProjectMember", "RCAReport", "RequirementDoc", "RequirementItem", "RiskTier", "Role",
+    "ProjectMember", "RCAReport", "RequirementDoc", "RequirementItem", "RequirementRule",
+    "RiskTier", "Role",
     "Run", "RunStatus", "RunStepRecord", "RunTest", "Schedule", "StepAction", "SuiteMember",
     "TestCase", "TestCategory", "TestStat", "TestStatus", "TestStep", "TestSuite",
     "TestVersion", "TimestampMixin", "UsageLedger", "User", "VaultSecret", "VisualBaseline", "VisualComparison",
+    "WEBHOOK_EVENTS", "WebhookDelivery", "WebhookEndpoint",
+    "STAGE_ORDER", "Journey", "JourneyStage", "JourneyStatus",
+    "Milestone", "MilestoneStatus", "Environment", "TestPlan", "Cycle",
+    "CycleStatus", "DefectLink", "DefectMap", "SharedStep",
     "new_id", "utcnow",
 ]

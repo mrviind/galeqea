@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GaleQEA: AI-first test automation, on your model or none</title>
+  <meta name="description" content="Point GaleQEA at any URL in plain English. It explores your app, plans, generates tests, runs them in a real browser, and reports, on whatever LLM you use, or none. Open source, self-hostable, and it never burns a token to re-run." />
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <meta name="theme-color" content="#0b0c0e" />
+
+  <!-- Open Graph / social -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="GaleQEA: AI-first test automation, on your model or none" />
+  <meta property="og:description" content="Point it at any URL. It explores, plans, tests in a real browser, and reports, on your model or none. Pay to build, not to re-run." />
+  <meta property="og:image" content="./og.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ---- tokens (the product's own palette) ---------------------------- */
+    :root {
+      --canvas:#0b0c0e; --surface:#111214; --surface-2:#17181b; --surface-3:#1e2024;
+      --line:#26282d; --line-strong:#33363d;
+      --ink:#e8e9ec; --ink-2:#a0a4ad; --ink-3:#6e727c;
+      --accent:#5c93c9; --accent-bright:#94bce0; --accent-dim:#244d70;
+      --gold:#FFD60A; --navy:#0A192F;
+      --pass:#FFD60A; --fail:#d9605a; --flaky:#e2892c; --review:#4d97a0; --running:#5c93c9;
+      --max:1120px;
+      --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:22px;
+      --sans:"Inter",ui-sans-serif,system-ui,-apple-system,sans-serif;
+      --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    }
+    *,*::before,*::after{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+    body{
+      margin:0; background:var(--canvas); color:var(--ink);
+      font-family:var(--sans); font-size:16px; line-height:1.6;
+      -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+      /* faint top glow, purely atmospheric, no external asset */
+      background-image:radial-gradient(120% 60% at 50% -10%, rgba(92,147,201,.10), transparent 60%);
+      background-repeat:no-repeat;
+    }
+    a{color:var(--accent-bright); text-decoration:none}
+    a:hover{color:#b7d4ee}
+    :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+    h1,h2,h3{line-height:1.15; margin:0; text-wrap:balance}
+    p{margin:0}
+    code,.mono{font-family:var(--mono)}
+    .wrap{max-width:var(--max); margin-inline:auto; padding-inline:24px}
+    section{padding-block:88px}
+    .eyebrow{font:600 12px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--accent-bright)}
+    .lede{color:var(--ink-2); font-size:18px; max-width:62ch}
+
+    /* ---- header -------------------------------------------------------- */
+    header{position:sticky; top:0; z-index:20; backdrop-filter:saturate(1.2) blur(8px);
+      background:rgba(11,12,14,.72); border-bottom:1px solid var(--line)}
+    .bar{display:flex; align-items:center; gap:20px; height:60px}
+    .bar nav{display:none; gap:22px; margin-left:auto; align-items:center}
+    .bar nav a{color:var(--ink-2); font-size:14px; font-weight:500}
+    .bar nav a:hover{color:var(--ink)}
+    @media(min-width:900px){.bar nav{display:flex}}
+    .ghlink{margin-left:auto; font-size:14px; color:var(--ink-2); font-weight:500}
+    @media(min-width:900px){.ghlink{margin-left:0}}
+
+    /* ---- wordmark ------------------------------------------------------ */
+    .mark{display:inline-flex; align-items:center; gap:10px; color:var(--ink)}
+    .glyph{width:30px; height:30px; border-radius:8px; background:var(--navy);
+      display:grid; place-items:center; flex:0 0 auto}
+    .glyph svg{display:block}
+    .wordmark{font-size:19px; letter-spacing:-.01em; white-space:nowrap}
+    .wordmark .g,.wordmark .a{font-style:italic; font-weight:400; color:var(--ink-2)}
+    .wordmark .qe{font-weight:800; color:var(--gold)}
+    .wordmark.lg{font-size:34px}
+
+    /* ---- buttons ------------------------------------------------------- */
+    .btns{display:flex; flex-wrap:wrap; gap:12px; align-items:center}
+    .btn{display:inline-flex; align-items:center; gap:9px; height:46px; padding:0 20px;
+      border-radius:var(--r-md); font-weight:600; font-size:15px; border:1px solid transparent;
+      transition:transform .12s ease, background .12s ease, border-color .12s ease}
+    .btn:active{transform:translateY(1px)}
+    .btn.primary{background:var(--ink); color:#0b0c0e}
+    .btn.primary:hover{background:#fff}
+    .btn.ghost{background:var(--surface-2); border-color:var(--line-strong); color:var(--ink)}
+    .btn.ghost:hover{border-color:var(--accent); color:#fff}
+    .cmd{font-family:var(--mono); font-size:13.5px}
+
+    /* ---- hero ---------------------------------------------------------- */
+    .hero{padding-top:72px; padding-bottom:40px; text-align:center}
+    .hero h1{font-size:clamp(34px,6vw,60px); font-weight:800; letter-spacing:-.025em; margin-top:22px}
+    .hero h1 .hl{color:var(--accent-bright)}
+    .hero .lede{margin:20px auto 0; text-align:center; font-size:clamp(16px,2.4vw,20px)}
+    .hero .btns{justify-content:center; margin-top:30px}
+    .copyhint{color:var(--ink-3); font:500 12.5px/1 var(--mono); margin-top:14px}
+    .frame{margin:52px auto 0; max-width:920px; border:1px solid var(--line);
+      border-radius:var(--r-xl); background:var(--surface); overflow:hidden;
+      box-shadow:0 30px 80px -40px rgba(0,0,0,.9), 0 0 0 1px rgba(92,147,201,.06)}
+    .chrome{display:flex; align-items:center; gap:8px; padding:11px 14px; border-bottom:1px solid var(--line); background:var(--surface-2)}
+    .dot{width:11px; height:11px; border-radius:50%}
+    .addr{margin-left:12px; flex:1; height:24px; border-radius:6px; background:var(--surface-3);
+      display:flex; align-items:center; padding:0 10px; color:#b9c2d0; font:500 11.5px/1 var(--mono)}
+    .frame img,.frame video{display:block; width:100%; height:auto}
+    .hero-still{display:none}
+    @media (prefers-reduced-motion:reduce){
+      .hero-media{display:none}
+      .hero-still{display:block}
+    }
+
+    /* ---- generic section bits ----------------------------------------- */
+    .head{max-width:60ch}
+    .head h2{font-size:clamp(26px,4vw,38px); font-weight:700; letter-spacing:-.02em; margin-top:12px}
+    .head p{margin-top:14px}
+    .grid{display:grid; gap:16px}
+    .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); padding:20px}
+    .card h3{font-size:16px; font-weight:650}
+    .card p{color:var(--ink-2); font-size:14px; margin-top:7px}
+
+    /* ---- rail (12 stages) --------------------------------------------- */
+    .rail{margin-top:36px; overflow-x:auto; padding-bottom:6px}
+    .rail-track{display:flex; gap:0; min-width:max-content; align-items:stretch; list-style:none; margin:0; padding:0}
+    .types{list-style:none; margin:36px 0 0; padding:0}
+    .stage{position:relative; display:flex; flex-direction:column; gap:6px; padding:14px 18px 14px 0}
+    .stage .n{font:600 11px/1 var(--mono); color:var(--ink-3)}
+    .stage .s{font-weight:600; font-size:14px; white-space:nowrap}
+    .stage .d{font-size:12px; color:var(--ink-3); max-width:150px}
+    .stage::after{content:""; position:absolute; left:0; top:22px; width:8px; height:8px; border-radius:50%;
+      background:var(--accent); box-shadow:0 0 0 4px rgba(92,147,201,.15)}
+    .stage{padding-left:22px}
+    .stage .conn{position:absolute; left:4px; top:26px; bottom:-14px; width:1px; background:var(--line)}
+    .rail-line{position:relative}
+
+    /* ---- testing types ------------------------------------------------ */
+    .types{grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); margin-top:36px}
+    .type{display:flex; gap:12px; align-items:flex-start}
+    .type .tick{color:var(--gold); font-weight:800; font-family:var(--mono); font-size:13px; margin-top:2px}
+    .type h3{font-size:14.5px; font-weight:600}
+    .type p{font-size:13px; color:var(--ink-3); margin-top:4px}
+
+    /* ---- cost block ---------------------------------------------------- */
+    .cost{display:grid; gap:16px; margin-top:36px; grid-template-columns:1fr}
+    @media(min-width:760px){.cost{grid-template-columns:1fr 1fr}}
+    .cost .col{border-radius:var(--r-lg); border:1px solid var(--line); padding:24px; background:var(--surface)}
+    .cost .build{border-color:var(--accent-dim)}
+    .cost .rerun{border-color:rgba(255,214,10,.28)}
+    .cost .k{font:600 12px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase}
+    .cost .build .k{color:var(--accent-bright)} .cost .rerun .k{color:var(--gold)}
+    .cost h3{font-size:20px; font-weight:700; margin-top:10px}
+    .cost ul{margin:14px 0 0; padding:0; list-style:none; display:grid; gap:9px}
+    .cost li{color:var(--ink-2); font-size:14px; padding-left:22px; position:relative}
+    .cost li::before{content:"›"; position:absolute; left:4px; color:var(--ink-3)}
+    .price{font:800 clamp(28px,5vw,40px)/1 var(--sans); letter-spacing:-.02em; margin-top:16px}
+    .cost .rerun .price{color:var(--gold)}
+
+    /* ---- two-column feature rows -------------------------------------- */
+    .cols{display:grid; gap:16px; margin-top:36px; grid-template-columns:1fr}
+    @media(min-width:820px){.cols.two{grid-template-columns:1fr 1fr}}
+    @media(min-width:820px){.cols.three{grid-template-columns:repeat(3,1fr)}}
+
+    /* ---- badges (tools) ------------------------------------------------ */
+    .badges{display:flex; flex-wrap:wrap; gap:10px; margin-top:28px}
+    .badge{font-family:var(--mono); font-size:13px; color:var(--ink-2); background:var(--surface-2);
+      border:1px solid var(--line); border-radius:999px; padding:7px 14px}
+    .badge b{color:var(--ink); font-weight:500}
+
+    /* ---- checklist ----------------------------------------------------- */
+    .checks{display:grid; gap:10px; margin-top:24px; grid-template-columns:1fr}
+    @media(min-width:700px){.checks{grid-template-columns:1fr 1fr}}
+    .check{display:flex; gap:10px; align-items:flex-start; font-size:14px; color:var(--ink-2)}
+    .check svg{flex:0 0 auto; margin-top:3px}
+
+    /* ---- footer -------------------------------------------------------- */
+    footer{border-top:1px solid var(--line); padding-block:48px; color:var(--ink-3)}
+    .foot{display:flex; flex-wrap:wrap; gap:32px; justify-content:space-between}
+    .foot .col .foot-h{font:600 12px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-2); margin-bottom:12px}
+    .foot .col a{display:block; color:var(--ink-3); font-size:14px; padding:4px 0}
+    .foot .col a:hover{color:var(--ink)}
+    .rule{border:0; border-top:1px solid var(--line); margin:0}
+    .fineprint{margin-top:28px; font-size:13px; color:var(--ink-3)}
+  </style>
+</head>
+<body>
+  <a href="#main" class="btn" style="position:absolute;left:-9999px">Skip to content</a>
+
+  <header>
+    <div class="wrap bar">
+      <a class="mark" href="#" aria-label="GaleQEA home">
+        <span class="glyph" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFD60A" stroke-width="2.4" stroke-linecap="round">
+            <path d="M4 9h11a2.5 2.5 0 1 0-2.5-2.5"/><path d="M4 13h14a2.5 2.5 0 1 1-2.5 2.5"/><path d="M4 17h8a2.2 2.2 0 1 1-2.2 2.2"/>
+          </svg>
+        </span>
+        <span class="wordmark"><span class="g">gale</span><span class="qe">QE</span><span class="a">a</span></span>
+      </a>
+      <nav aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="#testing">Testing</a>
+        <a href="#cost">Cost</a>
+        <a href="#managers">Test managers</a>
+        <a href="#tools">Integrations</a>
+      </nav>
+      <a class="ghlink" href="https://github.com/mrviind/galeqea">GitHub ↗</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- HERO ---------------------------------------------------------- -->
+    <section class="hero wrap" style="padding-top:64px">
+      <p class="eyebrow">Open-source · self-hostable · runs on any LLM</p>
+      <h1>Point it at any URL.<br>It <span class="hl">explores, plans, tests</span> in a real browser, and reports.</h1>
+      <p class="lede">Describe what to test in plain English. GaleQEA drives your app in a real browser, proposes a test plan, builds the tests, heals what breaks, and reports, on whatever model you already use, <b style="color:var(--ink)">or none at all</b>.</p>
+      <div class="btns">
+        <a class="btn primary" href="https://github.com/mrviind/galeqea"><span class="cmd">git clone … &amp;&amp; make start</span></a>
+        <a class="btn ghost" href="#how">See the golden path →</a>
+      </div>
+      <p class="copyhint">One command. Installs deps, builds the UI, launches on localhost:8080.</p>
+
+      <figure class="frame" style="margin-bottom:0">
+        <div class="chrome" aria-hidden="true">
+          <span class="dot" style="background:#e2892c"></span>
+          <span class="dot" style="background:#FFD60A"></span>
+          <span class="dot" style="background:#3fb950"></span>
+          <span class="addr">localhost:8080: chat</span>
+        </div>
+        <!-- Motion for most; a static frame for reduced-motion. Poster is a light
+             WebP so it is the LCP element and paints instantly. -->
+        <video class="hero-media" width="1000" height="625" autoplay muted loop playsinline
+               preload="metadata" poster="./hero-poster.webp"
+               aria-label="GaleQEA in use: a tester types a URL in the chat, the agent explores the site and returns a test-plan card, a run board fills in as tests execute in a real browser, and a report card summarizes pass and fail.">
+          <source src="./hero.webm" type="video/webm" />
+          <source src="./hero.mp4" type="video/mp4" />
+        </video>
+        <picture class="hero-still">
+          <source srcset="./hero-poster.avif" type="image/avif" />
+          <source srcset="./hero-poster.webp" type="image/webp" />
+          <img src="./hero-poster.jpg" width="1000" height="625" fetchpriority="high" decoding="async"
+               alt="GaleQEA in use: a URL in the chat becomes a test-plan card, a run board, and a report card." />
+        </picture>
+      </figure>
+      <figcaption class="copyhint" style="margin-top:16px">A real capture: URL → plan card → run board → report card. Regenerate any time with <code>make hero</code>.</figcaption>
+    </section>
+
+    <!-- HOW IT WORKS -------------------------------------------------- -->
+    <section id="how" class="wrap">
+      <div class="head">
+        <p class="eyebrow">How it works</p>
+        <h2>One journey, twelve honest stages</h2>
+        <p class="lede">Every target moves along the same rail. Nothing is hidden: you see where it is, what it skipped and why, and where a human decision is required. Approvals are structural: the agent can never approve its own work.</p>
+      </div>
+      <div class="rail">
+        <ol class="rail-track" aria-label="The twelve-stage journey">
+          <li class="stage"><span class="conn"></span><span class="n">01</span><span class="s">Target</span><span class="d">A URL and what to test</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">02</span><span class="s">Access</span><span class="d">Sign-in handled safely</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">03</span><span class="s">Guardrails</span><span class="d">Scope and no-go rules</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">04</span><span class="s">Explore</span><span class="d">Map the app in a real browser</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">05</span><span class="s">Plan</span><span class="d">Propose tests for review</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">06</span><span class="s">Build</span><span class="d">Generate healable tests</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">07</span><span class="s">Smoke</span><span class="d">A fast first pass</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">08</span><span class="s">Run</span><span class="d">Execute across browsers</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">09</span><span class="s">Triage</span><span class="d">New vs known vs flaky</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">10</span><span class="s">Readiness</span><span class="d">Go / No-Go on live metrics</span></li>
+          <li class="stage"><span class="conn"></span><span class="n">11</span><span class="s">Report</span><span class="d">JSON · Markdown · JUnit</span></li>
+          <li class="stage"><span class="n">12</span><span class="s">Keep green</span><span class="d">Schedule &amp; heal over time</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- EVERY KIND OF TESTING ---------------------------------------- -->
+    <section id="testing" class="wrap" style="background:linear-gradient(180deg,transparent,rgba(23,24,27,.4),transparent)">
+      <div class="head">
+        <p class="eyebrow">Every kind of testing</p>
+        <h2>Fifteen kinds of test, one agent</h2>
+        <p class="lede">GaleQEA doesn't just click through happy paths. It designs tests the way a senior QE would: from the UI, from a spec, and from what it discovers exploring.</p>
+      </div>
+      <ul class="grid types">
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Functional / UI</h3><p>Happy-path and end-to-end user flows</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Smoke</h3><p>A fast subset that gates every change</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Regression</h3><p>The full suite, re-run for free</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Exploratory (AI)</h3><p>The agent hunts for the surprising</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Exploratory (tester)</h3><p>Timeboxed SBTM sessions with notes</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>API contract</h3><p>Status + schema conformance from OpenAPI</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Boundary &amp; format</h3><p>Min/max, length, enum, format edges</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Negative / required-missing</h3><p>Every required field, omitted</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Auth &amp; permission</h3><p>Unauthenticated and role checks</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Visual regression</h3><p>Pixel diffs with a sane threshold</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Accessibility</h3><p>axe-driven a11y assertions</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Performance</h3><p>Budgets on real page metrics</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Responsive</h3><p>Mobile and desktop viewports</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Form validation</h3><p>Field rules and error states</p></div></li>
+        <li class="type"><span class="tick" aria-hidden="true">›</span><div><h3>Self-healing</h3><p>Locators that survive UI churn</p></div></li>
+      </ul>
+    </section>
+
+    <!-- COST ---------------------------------------------------------- -->
+    <section id="cost" class="wrap">
+      <div class="head">
+        <p class="eyebrow">Pay to build, not to re-run</p>
+        <h2>The model builds. Re-running is free.</h2>
+        <p class="lede">Most AI-testing tools call the model on every run and meter you for it. GaleQEA spends the model to <b style="color:var(--ink)">build and reason</b> once; after that, execution, deterministic healing, scheduling and reporting need no model and cost nothing.</p>
+      </div>
+      <div class="cost">
+        <div class="col build">
+          <p class="k">Spend the model</p>
+          <h3>Building &amp; reasoning</h3>
+          <ul>
+            <li>Exploring a new app</li>
+            <li>Designing and generating tests</li>
+            <li>Root-cause analysis of a failure</li>
+            <li>Proposing a self-heal for review</li>
+          </ul>
+          <p class="price" style="color:var(--accent-bright)">Your key, your rate</p>
+        </div>
+        <div class="col rerun">
+          <p class="k">No model needed</p>
+          <h3>Re-running forever</h3>
+          <ul>
+            <li>Executing tests in real browsers</li>
+            <li>Deterministic healing of known breaks</li>
+            <li>Scheduling &amp; CI runs</li>
+            <li>Every report, metric and export</li>
+          </ul>
+          <p class="price">$0.00</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- YOUR DATA, YOUR MODEL ----------------------------------------- -->
+    <section class="wrap">
+      <div class="head">
+        <p class="eyebrow">Your data, your model</p>
+        <h2>Runs on your LLM, or no LLM at all</h2>
+      </div>
+      <div class="cols three">
+        <div class="card"><h3>No-AI mode</h3><p>Every core feature works with the model switched off: recording, execution, healing of known signatures, scheduling and reporting are all deterministic.</p></div>
+        <div class="card"><h3>Bring your own model</h3><p>Anthropic, OpenAI, Gemini, Azure, or any OpenAI-compatible endpoint. Reuse the key you already pay for, no second AI bill, no lock-in.</p></div>
+        <div class="card"><h3>Fully local</h3><p>Point it at a local Ollama or vLLM. Your app, your traffic and your tests never leave your machine.</p></div>
+      </div>
+    </section>
+
+    <!-- FOR TEST MANAGERS --------------------------------------------- -->
+    <section id="managers" class="wrap" style="background:linear-gradient(180deg,transparent,rgba(23,24,27,.4),transparent)">
+      <div class="head">
+        <p class="eyebrow">For test managers</p>
+        <h2>Releases, readiness, and a human sign-off that means something</h2>
+        <p class="lede">A full test-manager object model: Requirement → TestCase → Plan → Cycle × Config → Result → Defect, rolled up to a Release. Exit criteria are evaluated against live metrics into a Go / No-Go readiness verdict.</p>
+      </div>
+      <div class="cols three">
+        <div class="card"><h3>Milestones &amp; exit criteria</h3><p>Set pass-rate, coverage, flaky and open-blocker thresholds in plain English; readiness is computed against real results.</p></div>
+        <div class="card"><h3>Cycles &amp; configurations</h3><p>Run a plan across browsers and environments; each cycle pins the exact test version it executed.</p></div>
+        <div class="card"><h3>Immutable sign-off</h3><p>An approver signs Go or No-Go; the decision is audited and immutable, and an AI principal can never sign.</p></div>
+      </div>
+    </section>
+
+    <!-- WORKS WITH YOUR TOOLS ----------------------------------------- -->
+    <section id="tools" class="wrap">
+      <div class="head">
+        <p class="eyebrow">Works with your tools</p>
+        <h2>Fits the stack you already run</h2>
+        <p class="lede">File defects, import stories, push results, publish reports and get notified, through a human approval gate, with credentials sealed in a vault.</p>
+      </div>
+      <div class="badges">
+        <span class="badge"><b>Jira</b> · defects &amp; stories</span>
+        <span class="badge"><b>Xray</b> · results &amp; coverage</span>
+        <span class="badge"><b>Zephyr Scale</b> · executions</span>
+        <span class="badge"><b>TestRail</b> · runs &amp; results</span>
+        <span class="badge"><b>Confluence</b> · release reports</span>
+        <span class="badge"><b>Slack</b> · notifications</span>
+        <span class="badge"><b>Microsoft Teams</b> · notifications</span>
+        <span class="badge"><b>GitHub</b> · issues &amp; PRs</span>
+        <span class="badge"><b>GitLab</b> · issues &amp; MRs</span>
+        <span class="badge"><b>OpenAPI</b> · contract tests</span>
+      </div>
+      <p class="fineprint">Product names are the trademarks of their respective owners and are used here only to describe interoperability.</p>
+    </section>
+
+    <!-- CORPORATE READY ----------------------------------------------- -->
+    <section class="wrap" style="background:linear-gradient(180deg,transparent,rgba(23,24,27,.4),transparent)">
+      <div class="head">
+        <p class="eyebrow">Corporate-ready</p>
+        <h2>Governed, auditable, and yours to host</h2>
+      </div>
+      <div class="checks">
+        <div class="check"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFD60A" stroke-width="2"><path d="M3 8.5l3 3 7-7"/></svg><span><b style="color:var(--ink)">SSO / OIDC</b>: Keycloak, Okta, Entra, Google; roles mapped from group claims.</span></div>
+        <div class="check"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFD60A" stroke-width="2"><path d="M3 8.5l3 3 7-7"/></svg><span><b style="color:var(--ink)">Approval gate</b>: every write is a proposal a human accepts; enforced in code.</span></div>
+        <div class="check"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFD60A" stroke-width="2"><path d="M3 8.5l3 3 7-7"/></svg><span><b style="color:var(--ink)">Hash-chained audit ledger</b>: every action recorded and verifiable.</span></div>
+        <div class="check"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFD60A" stroke-width="2"><path d="M3 8.5l3 3 7-7"/></svg><span><b style="color:var(--ink)">Secrets in a vault</b>: envelope-encrypted; never in logs, reports or the transcript.</span></div>
+        <div class="check"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFD60A" stroke-width="2"><path d="M3 8.5l3 3 7-7"/></svg><span><b style="color:var(--ink)">GDPR export &amp; erase</b>: subject-access and erasure endpoints, admin-gated.</span></div>
+        <div class="check"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFD60A" stroke-width="2"><path d="M3 8.5l3 3 7-7"/></svg><span><b style="color:var(--ink)">SBOM &amp; scorecard</b>: supply-chain transparency, OpenSSF Scorecard.</span></div>
+      </div>
+      <p style="margin-top:24px"><a href="https://github.com/mrviind/galeqea/blob/main/docs/ENTERPRISE.md">Read the enterprise readiness checklist →</a></p>
+    </section>
+
+    <!-- OPEN SOURCE --------------------------------------------------- -->
+    <section class="wrap" style="text-align:center">
+      <p class="eyebrow">Open source</p>
+      <h2 style="font-size:clamp(26px,4vw,38px);font-weight:700;letter-spacing:-.02em;margin-top:12px">Apache-2.0. Yours to read, run, and extend.</h2>
+      <p class="lede" style="margin:14px auto 0">No cloud lock-in, no per-run meter, no black box. Clone it, host it, and see exactly what it does with your app and your model.</p>
+      <div class="btns" style="justify-content:center;margin-top:28px">
+        <a class="btn primary" href="https://github.com/mrviind/galeqea"><span class="cmd">git clone … &amp;&amp; make start</span></a>
+        <a class="btn ghost" href="https://github.com/mrviind/galeqea/blob/main/CONTRIBUTING.md">Contributor guide →</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div class="foot">
+        <div class="col" style="max-width:280px">
+          <a class="mark" href="#" aria-label="GaleQEA" style="margin-bottom:12px">
+            <span class="glyph" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFD60A" stroke-width="2.4" stroke-linecap="round"><path d="M4 9h11a2.5 2.5 0 1 0-2.5-2.5"/><path d="M4 13h14a2.5 2.5 0 1 1-2.5 2.5"/><path d="M4 17h8a2.2 2.2 0 1 1-2.2 2.2"/></svg>
+            </span>
+            <span class="wordmark"><span class="g">gale</span><span class="qe">QE</span><span class="a">a</span></span>
+          </a>
+          <p style="font-size:13px;color:var(--ink-3)">The open-source, AI-first test-automation agent. On your model, or none.</p>
+        </div>
+        <div class="col"><p class="foot-h">Docs</p>
+          <a href="https://github.com/mrviind/galeqea/blob/main/docs/GOLDEN-PATH.md">Golden path</a>
+          <a href="https://github.com/mrviind/galeqea/blob/main/docs/AUTHORING.md">Authoring tests</a>
+          <a href="https://github.com/mrviind/galeqea/blob/main/docs/INTEGRATIONS.md">Integrations</a>
+          <a href="https://github.com/mrviind/galeqea/blob/main/docs/MCP.md">MCP server</a>
+        </div>
+        <div class="col"><p class="foot-h">Project</p>
+          <a href="https://github.com/mrviind/galeqea">GitHub</a>
+          <a href="https://github.com/mrviind/galeqea/blob/main/docs/ENTERPRISE.md">Enterprise</a>
+          <a href="https://github.com/mrviind/galeqea/blob/main/CHANGELOG.md">Changelog</a>
+          <a href="https://github.com/mrviind/galeqea/blob/main/docs/security">Security</a>
+        </div>
+        <div class="col"><p class="foot-h">License</p>
+          <a href="https://github.com/mrviind/galeqea/blob/main/LICENSE">Apache-2.0</a>
+          <a href="https://github.com/mrviind/galeqea/blob/main/CODE_OF_CONDUCT.md">Code of conduct</a>
+          <a href="https://github.com/mrviind/galeqea/blob/main/SUPPORT.md">Support</a>
+        </div>
+      </div>
+      <hr class="rule" style="margin-top:36px" />
+      <p class="fineprint">© GaleQEA contributors · Apache-2.0 · Colour is signal: the brand is monochrome so green means passed, red means failed, and amber means unstable.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

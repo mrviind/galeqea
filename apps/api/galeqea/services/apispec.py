@@ -4,7 +4,7 @@ The service layer's job here is small but load-bearing: parse, generate, and
 hand the result to the same review path every other generated test takes. A
 specification is an *upload from outside*, so it is scanned for injection the
 way requirement documents are before any of its text reaches an agent, and the
-generated cases land as ``PROPOSED`` — never approved, never runnable — until a
+generated cases land as ``PROPOSED`` (never approved, never runnable) until a
 human decides.
 """
 

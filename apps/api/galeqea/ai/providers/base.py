@@ -35,7 +35,7 @@ class Message:
     #: wire flag their API expects (`is_error` on Anthropic). Without it a failed
     #: tool is indistinguishable from a successful one that happened to return
     #: the word "error", and the model has to infer failure from JSON it may not
-    #: read carefully — which is exactly when it invents a recovery that did not
+    #: read carefully, which is exactly when it invents a recovery that did not
     #: happen.
     is_error: bool = False
 

@@ -191,3 +191,92 @@ def changed_paths_for_commit(db: Session, *, project_id: str, provider: str, sha
     if response.status_code >= 400:
         raise safe_error(response, provider="GitHub")
     return [f["filename"] for f in response.json().get("files", [])]
+
+
+# --------------------------------------------------------------------------- #
+# Issue trackers (defects): GitHub / GitLab, the "second" trackers after Jira.
+# Issues carry a Markdown body; binary evidence is linked (these APIs have no
+# issue-attachment upload the way Jira does), so the body points back to the
+# GaleQEA run report and evidence bundle.
+# --------------------------------------------------------------------------- #
+def create_issue(db: Session, *, project_id: str, provider: str, title: str,
+                 body_markdown: str, labels: list[str] | None = None, **_ignored) -> dict:
+    connection = load_connection(db, project_id=project_id, provider=provider)
+    labels = [*(labels or []), "galeqea"]
+    if provider == "github":
+        repo = connection.require("repo")
+        headers = {"Authorization": f"Bearer {connection.secret('token')}",
+                   "Accept": "application/vnd.github+json"}
+        with http_client() as client:
+            r = client.post(f"https://api.github.com/repos/{repo}/issues", headers=headers,
+                            json={"title": title[:250], "body": body_markdown, "labels": labels})
+        if r.status_code >= 400:
+            raise safe_error(r, provider="GitHub")
+        d = r.json()
+        return {"ok": True, "key": str(d.get("number")), "id": str(d.get("id")),
+                "url": d.get("html_url", "")}
+    if provider == "gitlab":
+        base = connection.config.get("base_url", "https://gitlab.com").rstrip("/")
+        pid = connection.require("project_id")
+        headers = {"PRIVATE-TOKEN": connection.secret("token")}
+        with http_client() as client:
+            r = client.post(f"{base}/api/v4/projects/{pid}/issues", headers=headers,
+                            json={"title": title[:250], "description": body_markdown,
+                                  "labels": ",".join(labels)})
+        if r.status_code >= 400:
+            raise safe_error(r, provider="GitLab")
+        d = r.json()
+        return {"ok": True, "key": str(d.get("iid")), "id": str(d.get("id")),
+                "url": d.get("web_url", "")}
+    raise IntegrationError(f"{provider} is not a supported issue tracker")
+
+
+def comment_issue(db: Session, *, project_id: str, provider: str, issue_key: str,
+                  body_markdown: str) -> dict:
+    connection = load_connection(db, project_id=project_id, provider=provider)
+    if provider == "github":
+        repo = connection.require("repo")
+        headers = {"Authorization": f"Bearer {connection.secret('token')}",
+                   "Accept": "application/vnd.github+json"}
+        with http_client() as client:
+            r = client.post(f"https://api.github.com/repos/{repo}/issues/{issue_key}/comments",
+                            headers=headers, json={"body": body_markdown})
+        if r.status_code >= 400:
+            raise safe_error(r, provider="GitHub")
+        return {"ok": True}
+    if provider == "gitlab":
+        base = connection.config.get("base_url", "https://gitlab.com").rstrip("/")
+        pid = connection.require("project_id")
+        headers = {"PRIVATE-TOKEN": connection.secret("token")}
+        with http_client() as client:
+            r = client.post(f"{base}/api/v4/projects/{pid}/issues/{issue_key}/notes",
+                            headers=headers, json={"body": body_markdown})
+        if r.status_code >= 400:
+            raise safe_error(r, provider="GitLab")
+        return {"ok": True}
+    raise IntegrationError(f"{provider} is not a supported issue tracker")
+
+
+def issue_status(db: Session, *, project_id: str, provider: str, issue_key: str) -> dict:
+    connection = load_connection(db, project_id=project_id, provider=provider)
+    if provider == "github":
+        repo = connection.require("repo")
+        headers = {"Authorization": f"Bearer {connection.secret('token')}",
+                   "Accept": "application/vnd.github+json"}
+        with http_client() as client:
+            r = client.get(f"https://api.github.com/repos/{repo}/issues/{issue_key}", headers=headers)
+        if r.status_code >= 400:
+            raise safe_error(r, provider="GitHub")
+        state = (r.json().get("state") or "").lower()
+        return {"ok": True, "status": state, "done": state == "closed"}
+    if provider == "gitlab":
+        base = connection.config.get("base_url", "https://gitlab.com").rstrip("/")
+        pid = connection.require("project_id")
+        headers = {"PRIVATE-TOKEN": connection.secret("token")}
+        with http_client() as client:
+            r = client.get(f"{base}/api/v4/projects/{pid}/issues/{issue_key}", headers=headers)
+        if r.status_code >= 400:
+            raise safe_error(r, provider="GitLab")
+        state = (r.json().get("state") or "").lower()
+        return {"ok": True, "status": state, "done": state in ("closed", "resolved")}
+    raise IntegrationError(f"{provider} is not a supported issue tracker")

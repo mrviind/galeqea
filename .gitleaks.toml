@@ -1,0 +1,18 @@
+# gitleaks configuration: extend the defaults; allowlist the deterministic dummy
+# secrets that ship in the dev/test fixtures (never used in production).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Dev/test fixtures with intentional placeholder secrets"
+paths = [
+  '''deploy/compose/full\.env''',
+  '''deploy/compose/keycloak/galeqea-realm\.json''',
+  '''deploy/compose/oidc-keycloak\.yml''',
+  '''deploy/compose/seaweedfs/s3\.json''',
+]
+regexes = [
+  '''galeqea-oidc-secret''',
+  '''galeqea-secret''',
+  '''ci-admin-secret''',
+]

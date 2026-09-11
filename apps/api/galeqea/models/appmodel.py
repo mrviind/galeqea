@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -85,6 +85,30 @@ class AppElement(Base, IdMixin, TimestampMixin):
     deprecated: Mapped[bool] = mapped_column(Boolean, default=False)
 
     screen: Mapped[AppScreen] = relationship(back_populates="elements")
+
+
+class StepCache(Base, IdMixin, TimestampMixin):
+    """A resolved locator ladder keyed by (normalized intent + page fingerprint).
+
+    This is what makes a re-run of a *model-authored* step cost zero tokens: the
+    first time the model resolves a step on a given page shape, the ladder is
+    written here; every later run with the same intent on the same page shape hits
+    the cache and executes deterministically, never calling the model. Only
+    navigation/locating steps are cached, never assertions or queries."""
+
+    __tablename__ = "step_cache"
+    __table_args__ = (UniqueConstraint("project_id", "cache_key", name="uq_step_cache"),)
+
+    project_id: Mapped[str] = mapped_column(String(40), index=True)
+    cache_key: Mapped[str] = mapped_column(String(64), index=True)
+    intent: Mapped[str] = mapped_column(Text, default="")
+    page_fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    #: The resolved locator ladder (same shape as AppElement.locators).
+    ladder: Mapped[list] = mapped_column(JSONish, default=list)
+    params: Mapped[dict] = mapped_column(JSONish, default=dict)
+    #: {"model": "...", "ts": "...", "strategy": "..."}, who authored this entry.
+    provenance: Mapped[dict] = mapped_column(JSONish, default=dict)
+    hits: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class HealEvent(Base, IdMixin, TimestampMixin):

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import type { ReactNode } from 'react';
 
 /**
- * Workspace state — what the Right Dock puts on the Left Canvas.
+ * Workspace state: what the Right Dock puts on the Left Canvas.
  *
  * React Context rather than a new store library: `state.tsx` already holds the
  * app's global state this way, and adding a second state paradigm for three
@@ -227,6 +227,40 @@ export const FOCUS_PANE_EVENT = 'galeqea:focus-pane';
 
 export function focusPane(pane: 'requirements' | 'test_matrix' | 'telemetry' | 'rca'): void {
   window.dispatchEvent(new CustomEvent(FOCUS_PANE_EVENT, { detail: pane }));
+}
+
+/** Send a plain-English command to the QE Agent from anywhere in the canvas
+ *  (e.g. the "test any website" field), and surface the chat if it's docked. */
+export const RUN_COMMAND_EVENT = 'galeqea:run-command';
+export const OPEN_CHAT_EVENT = 'galeqea:open-chat';
+
+/** Payload for RUN_COMMAND_EVENT. The `token` lets multiple mounted Copilots
+ *  (the docked one plus a mounted-but-hidden mobile drawer) agree that exactly
+ *  one of them handles a given dispatch. Otherwise a single click fans out to
+ *  every listener and the command is sent two or more times. */
+export interface RunCommandDetail {
+  text: string;
+  token: number;
+}
+
+let _runCommandToken = 0;
+
+export function runCommand(text: string): void {
+  const token = ++_runCommandToken;
+  window.dispatchEvent(new CustomEvent(OPEN_CHAT_EVENT));
+  window.dispatchEvent(
+    new CustomEvent<RunCommandDetail>(RUN_COMMAND_EVENT, { detail: { text, token } }),
+  );
+}
+
+/** Surface the QE Agent and drop `text` into its input *without sending*, so the
+ *  agent is the single place a user starts a website test (they finish typing the
+ *  URL and hit enter). Used by the canvas empty-state to keep the flow agentic. */
+export const PREFILL_CHAT_EVENT = 'galeqea:prefill-chat';
+
+export function prefillChat(text: string): void {
+  window.dispatchEvent(new CustomEvent(OPEN_CHAT_EVENT));
+  window.dispatchEvent(new CustomEvent<string>(PREFILL_CHAT_EVENT, { detail: text }));
 }
 
 export function useWorkspace(): WorkspaceState {

@@ -89,6 +89,7 @@ async def send_message(
     orchestrator = Orchestrator(db, provider=chosen, project_id=project.id)
     reply = await orchestrator.handle(
         session=session, user=user, text=text, attachments=payload.get("attachments"),
+        page=payload.get("page"),
     )
     user_message, assistant_message = persist_exchange(
         db, session, user_text=text, reply=reply, user_id=user.id,

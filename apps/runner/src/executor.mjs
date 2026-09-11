@@ -15,12 +15,14 @@
  *    to clear an SSO prompt, a CAPTCHA or a shadow-DOM blocker, then resumes.
  */
 
+import { AxeBuilder } from '@axe-core/playwright';
 import { emit, log, ask } from './protocol.mjs';
 import {
   resolve, harvestCandidates, fingerprint, describeRung, buildLocator,
   describeScreen, describeElement,
 } from './locator.mjs';
 import { validate as validateSchema, readPath } from './schema.mjs';
+import { trimAriaSnapshot } from './pagestate.mjs';
 
 const DEFAULT_TIMEOUT = 30000;
 
@@ -33,14 +35,31 @@ export class StepFailure extends Error {
   }
 }
 
+// "7 accessibility violation(s): 2 critical (color-contrast), 5 serious (label)".
+// The impact-tiered summary is what triage, the report and readiness all read.
+function _a11yMessage(violations, engine) {
+  const order = ['critical', 'serious', 'moderate', 'minor'];
+  const byImpact = {};
+  for (const v of violations) (byImpact[v.impact] ??= []).push(v.rule);
+  const parts = order.filter((i) => byImpact[i]).map((i) => {
+    const rules = [...new Set(byImpact[i])];
+    const named = rules.slice(0, 3).join(', ') + (rules.length > 3 ? ', …' : '');
+    return `${byImpact[i].length} ${i} (${named})`;
+  });
+  const total = violations.reduce((n, v) => n + 1, 0);
+  return `${total} accessibility violation(s): ${parts.join(', ')}`
+    + (engine === 'structural' ? '; structural fallback (axe could not inject, likely CSP)' : '');
+}
+
 export class Executor {
-  constructor({ page, context, testCase, run, artifacts, judge }) {
+  constructor({ page, context, testCase, run, artifacts, judge, rateLimiter }) {
     this.page = page;
     this.context = context;
     this.testCase = testCase;
     this.run = run;
     this.artifacts = artifacts;
     this.judge = judge;
+    this.rateLimiter = rateLimiter || (async () => {});
     this.consoleErrors = [];
     this.networkFailures = [];
     this.healsApplied = [];
@@ -140,6 +159,7 @@ export class Executor {
 
       case 'goto': {
         const url = this._resolveUrl(value.url || value.text || '');
+        await this.rateLimiter();  // honour the target's rate limit, shared across workers
         const response = await this.page.goto(url, {
           waitUntil: options.waitUntil || 'domcontentloaded', timeout,
         });
@@ -404,10 +424,10 @@ export class Executor {
     };
 
     let candidates = [];
-    let ariaSnapshot = '';
+    let state = { text: '', stateTokens: 0 };
     try {
       candidates = await harvestCandidates(this.page, target);
-      ariaSnapshot = await this._ariaSnapshot();
+      state = await this._pageState();
     } catch (err) {
       log('warn', `candidate harvest failed: ${err.message}`);
     }
@@ -421,7 +441,9 @@ export class Executor {
       failedLadder: ladder.map(describeRung),
       attempts: first.attempts,
       candidates,
-      ariaSnapshot: ariaSnapshot.slice(0, 8000),
+      // Trimmed, ref-handled page state instead of an 8K raw slice (WO#8-A).
+      ariaSnapshot: state.text,
+      state_tokens: state.stateTokens,
       url: this.page.url(),
     }, 120000);
 
@@ -461,13 +483,25 @@ export class Executor {
     }
   }
 
+  async _pageState() {
+    // A budgeted, ref-handled state (WO#8-A): interactive nodes + landmarks only,
+    // repeated siblings collapsed, for ~500 tokens instead of 8–12K chars of raw tree.
+    let raw = '';
+    try { raw = await this.page.locator('body').ariaSnapshot({ mode: 'ai' }); }
+    catch {
+      try { raw = await this.page.locator('body').ariaSnapshot(); } catch { raw = ''; }
+    }
+    return trimAriaSnapshot(raw);
+  }
+
   async _expectSemantic(step, index) {
-    const snapshot = await this._ariaSnapshot();
+    const state = await this._pageState();
     const shot = await this._safeScreenshot(`semantic-${index}`);
     const response = await ask('judge_request', {
       testId: this.testCase.id, stepIndex: index,
       question: step.expected || step.intent,
-      ariaSnapshot: snapshot.slice(0, 12000),
+      ariaSnapshot: state.text,
+      state_tokens: state.stateTokens,
       screenshot: shot?.path || null,
       url: this.page.url(),
     }, 120000);
@@ -619,36 +653,71 @@ export class Executor {
   }
 
   async _assertA11y(step, options) {
-    // Structural checks that need no third-party engine, so accessibility
-    // coverage is present in the default offline install rather than optional.
-    const findings = await this.page.evaluate(() => {
-      const issues = [];
+    const value = step.value || {};
+    const tags = value.tags || ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'];
+    // fail_on is a set of axe impact tiers; serious+critical is the sane default.
+    const failOn = new Set(value.fail_on || options.fail_on || ['serious', 'critical']);
+
+    // The real thing: axe-core, the industry-standard engine. It reports each
+    // violation's rule id, impact tier, help URL and the offending selectors,
+    // the evidence a bug report needs. The structural checker below is only a
+    // fallback for when axe cannot inject (a strict CSP), and the result says so.
+    let engine = 'axe';
+    let violations;
+    try {
+      const results = await new AxeBuilder({ page: this.page }).withTags(tags).analyze();
+      violations = results.violations.map((v) => ({
+        rule: v.id, impact: v.impact || 'moderate', help: v.help, helpUrl: v.helpUrl,
+        count: v.nodes.length,
+        nodes: v.nodes.slice(0, 3).map((n) => ({
+          target: (n.target || []).join(' '),
+          html: (n.html || '').slice(0, 200),
+          summary: (n.failureSummary || '').slice(0, 200),
+        })),
+      }));
+    } catch (err) {
+      engine = 'structural';
+      violations = await this._structuralA11y();
+    }
+
+    const failing = violations.filter((v) => failOn.has(v.impact));
+    if (failing.length > 0) {
+      throw new StepFailure(_a11yMessage(failing, engine), {
+        type: 'accessibility',
+        detail: { engine, tags, violations: failing.slice(0, 20) },
+      });
+    }
+    return { detail: { engine, tags, violations: [] } };
+  }
+
+  async _structuralA11y() {
+    // Offline fallback: a handful of high-signal structural rules, mapped to axe
+    // impact tiers so downstream (report, triage, readiness) reads the same shape.
+    const issues = await this.page.evaluate(() => {
+      const out = [];
+      const add = (rule, node) => out.push({ rule, node });
       for (const img of document.querySelectorAll('img')) {
-        if (!img.hasAttribute('alt')) issues.push({ rule: 'image-alt', node: img.outerHTML.slice(0, 120) });
+        if (!img.hasAttribute('alt')) add('image-alt', img.outerHTML.slice(0, 200));
       }
       for (const input of document.querySelectorAll('input:not([type=hidden]),select,textarea')) {
-        const labelled = input.labels?.length || input.getAttribute('aria-label') || input.getAttribute('aria-labelledby') || input.getAttribute('title');
-        if (!labelled) issues.push({ rule: 'form-label', node: input.outerHTML.slice(0, 120) });
+        const labelled = input.labels?.length || input.getAttribute('aria-label')
+          || input.getAttribute('aria-labelledby') || input.getAttribute('title');
+        if (!labelled) add('label', input.outerHTML.slice(0, 200));
       }
       for (const btn of document.querySelectorAll('button,[role=button]')) {
         const name = (btn.innerText || btn.getAttribute('aria-label') || btn.getAttribute('title') || '').trim();
-        if (!name) issues.push({ rule: 'button-name', node: btn.outerHTML.slice(0, 120) });
+        if (!name) add('button-name', btn.outerHTML.slice(0, 200));
       }
-      const headings = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h) => Number(h.tagName[1]));
-      for (let i = 1; i < headings.length; i++) {
-        if (headings[i] - headings[i - 1] > 1) { issues.push({ rule: 'heading-order', node: `h${headings[i - 1]} → h${headings[i]}` }); break; }
-      }
-      if (!document.documentElement.getAttribute('lang')) issues.push({ rule: 'html-lang', node: '<html>' });
-      return issues;
+      if (!document.documentElement.getAttribute('lang')) add('html-has-lang', '<html>');
+      return out;
     });
-
-    const max = options.max_violations ?? 0;
-    if (findings.length > max) {
-      throw new StepFailure(`${findings.length} accessibility violation(s), allowed ${max}`, {
-        type: 'accessibility', detail: { findings: findings.slice(0, 20) },
-      });
-    }
-    return { detail: { findings } };
+    const impact = { 'image-alt': 'critical', label: 'critical', 'button-name': 'critical', 'html-has-lang': 'serious' };
+    const byRule = {};
+    for (const it of issues) (byRule[it.rule] ??= []).push(it.node);
+    return Object.entries(byRule).map(([rule, nodes]) => ({
+      rule, impact: impact[rule] || 'moderate', help: rule, helpUrl: '',
+      count: nodes.length, nodes: nodes.slice(0, 3).map((html) => ({ target: '', html, summary: '' })),
+    }));
   }
 
   async _assertPerf(value, options) {
@@ -695,6 +764,13 @@ export class Executor {
       throw new StepFailure(`handoff was not completed: ${response?.reason || 'timed out waiting for a human'}`,
         { type: 'handoff' });
     }
+    // Capture whatever session the human just established (e.g. a completed SSO
+    // login), so log-in-for-me can seal and reuse it. Best-effort; a page without
+    // a context simply yields nothing.
+    try {
+      const storageState = await this.page.context().storageState();
+      emit('handoff_session', { testId: this.testCase.id, stepIndex: index, storageState });
+    } catch { /* no session to capture */ }
     return { status: 'passed', logs: ['resumed after human handoff'], artifacts: shot ? [shot] : [] };
   }
 

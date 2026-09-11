@@ -68,7 +68,7 @@ def test_a_sound_test_passes_review():
 
 
 def test_review_reads_a_stored_test(db, project):
-    from galeqea.models import StepAction, TestCase, TestStep, TestStatus
+    from galeqea.models import StepAction, TestCase, TestStatus, TestStep
 
     case = TestCase(project_id=project.id, key="TST-T-1", title="Stored", status=TestStatus.APPROVED,
                     requirement_refs=[])
@@ -90,7 +90,7 @@ def test_review_projects_onto_the_rca_pane():
 
 
 # --------------------------------------------------------------------------- #
-# analyze_change_impact — and the crash it uncovered
+# analyze_change_impact, and the crash it uncovered
 # --------------------------------------------------------------------------- #
 def test_an_empty_suite_does_not_divide_by_zero(db, project):
     """A fresh project has no approved tests; impact analysis must still answer."""
@@ -154,7 +154,7 @@ def test_the_three_new_tools_carry_full_metadata():
         assert tool is not None
         assert tool.title
         assert len([s for s in tool.description.split(". ") if len(s) > 12]) >= 3
-        assert tool.read_only, f"{name} must be read-only — none of these write directly"
+        assert tool.read_only, f"{name} must be read-only; none of these write directly"
 
 
 # --------------------------------------------------------------------------- #

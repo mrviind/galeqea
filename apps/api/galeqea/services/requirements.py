@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..ai.embeddings import cosine, local_embed
@@ -33,6 +33,7 @@ from ..models import (
     Project,
     RequirementDoc,
     RequirementItem,
+    RequirementRule,
     StepAction,
     TestCase,
     TestCategory,
@@ -72,23 +73,47 @@ def ingest_document(
     # and never strip it silently - a hidden attack is worse than a visible one.
     injection = scan(extracted.text)
 
-    doc = RequirementDoc(
-        project_id=project_id,
-        title=title or filename,
-        kind=kind,
-        source_filename=filename,
-        mime_type=extracted.mime_type,
-        content=extracted.text,
-        content_sha256=extracted.sha256,
-        page_count=extracted.page_count,
-        uploaded_by=uploaded_by,
-        meta={
-            "warnings": extracted.warnings,
-            "injection_scan": injection.as_dict(),
-            "bytes": len(data),
-        },
-    )
-    db.add(doc)
+    meta = {
+        "warnings": extracted.warnings,
+        "injection_scan": injection.as_dict(),
+        "bytes": len(data),
+    }
+    # Re-uploading the same file (identical extracted content) updates the existing
+    # doc in place rather than piling up a duplicate that would double-count coverage
+    # in the RTM (WO#9-C). Match on the content hash within the project.
+    doc = db.execute(
+        select(RequirementDoc).where(
+            RequirementDoc.project_id == project_id,
+            RequirementDoc.content_sha256 == extracted.sha256,
+        )
+    ).scalar_one_or_none()
+    if doc is not None:
+        db.execute(delete(RequirementRule).where(RequirementRule.doc_id == doc.id))
+        for stale_item in list(doc.items):
+            db.delete(stale_item)
+        db.flush()
+        doc.title = title or filename
+        doc.kind = kind
+        doc.source_filename = filename
+        doc.mime_type = extracted.mime_type
+        doc.content = extracted.text
+        doc.page_count = extracted.page_count
+        doc.uploaded_by = uploaded_by
+        doc.meta = {**meta, "updated_in_place": True}
+    else:
+        doc = RequirementDoc(
+            project_id=project_id,
+            title=title or filename,
+            kind=kind,
+            source_filename=filename,
+            mime_type=extracted.mime_type,
+            content=extracted.text,
+            content_sha256=extracted.sha256,
+            page_count=extracted.page_count,
+            uploaded_by=uploaded_by,
+            meta=meta,
+        )
+        db.add(doc)
     db.flush()
 
     items: list[RequirementItem] = []
@@ -98,7 +123,7 @@ def ingest_document(
         # A spreadsheet already separated its rows and labelled its columns.
         # Re-deriving requirements from the rendered text would throw that away.
         candidates = extracted.structured or ingest.split_requirements(
-            extracted.text, prefix=prefix
+            extracted.text, prefix=prefix, page_offsets=extracted.page_offsets
         )
         for candidate in candidates:
             item = RequirementItem(
@@ -112,11 +137,23 @@ def ingest_document(
                 risk=candidate.risk,
                 acceptance_criteria=candidate.acceptance_criteria,
                 open_questions=candidate.open_questions,
+                source_anchor={**(candidate.source_anchor or {}), "doc_id": doc.id},
                 embedding=local_embed(f"{candidate.title} {candidate.text}"),
             )
             db.add(item)
             items.append(item)
         db.flush()
+
+        # A glossary/roles summary is the shared vocabulary every rule leans on;
+        # keep a compact version on the doc so generation can prime on it without
+        # re-reading the whole document (WO#9-A).
+        glossary = ingest.glossary_summary(extracted.text)
+        if glossary:
+            doc.meta = {**(doc.meta or {}), "glossary_summary": glossary}
+
+        # Distil atomic rules now, so the RTM has req -> rules before any test is
+        # generated (WO#9-B).
+        extract_and_persist_rules(db, project_id=project_id, items=items, skip_existing=False)
 
     audit.record(
         db,
@@ -152,29 +189,261 @@ def ingest_document(
     )
 
 
+
+
 # --------------------------------------------------------------------------- #
 # Proposal generation
 # --------------------------------------------------------------------------- #
+def extract_and_persist_rules(
+    db: Session, *, project_id: str, items: list[RequirementItem], skip_existing: bool = True
+) -> list[RequirementRule]:
+    """Distil atomic rules from each requirement item and persist them (WO#9-B).
+
+    Deterministic; runs with no model. ``skip_existing`` backfills only items that
+    have no rules yet, so calling it again after ingestion is a safe no-op.
+    """
+    from ..intelligence import rules as rule_engine
+
+    already: set[str] = set()
+    if skip_existing:
+        already = {
+            row[0] for row in db.execute(
+                select(RequirementRule.item_id).where(RequirementRule.project_id == project_id)
+            ).all()
+        }
+    created: list[RequirementRule] = []
+    for item in items:
+        if skip_existing and item.id in already:
+            continue
+        for n, extracted in enumerate(
+            rule_engine.extract_rules(item.text, ref=item.ref, section=item.section,
+                                      source_anchor=item.source_anchor), start=1
+        ):
+            rule = RequirementRule(
+                project_id=project_id, doc_id=item.doc_id, item_id=item.id,
+                requirement_ref=item.ref, rule_id=f"{item.ref}-R{n}",
+                rule_type=extracted.rule_type, text=extracted.text, inputs=extracted.inputs,
+                constraints=extracted.constraints, technique=extracted.technique,
+                source_anchor=item.source_anchor or {}, open_questions=extracted.open_questions,
+                provenance={"origin": "deterministic"},
+            )
+            db.add(rule)
+            created.append(rule)
+    if created:
+        db.flush()
+    return created
+
+
+def archive_requirement_doc(db: Session, *, project_id: str, doc_id: str) -> dict:
+    """Hide a requirement document from the matrix and lists without deleting it.
+    Reversible, since the doc and its items stay in the DB (WO#9-C)."""
+    doc = db.get(RequirementDoc, doc_id)
+    if doc is None or doc.project_id != project_id:
+        return {"ok": False, "error": f"no requirement doc {doc_id!r} in this project"}
+    doc.meta = {**(doc.meta or {}), "archived": True}
+    db.flush()
+    return {"ok": True, "doc_id": doc.id, "title": doc.title, "archived": True}
+
+
+def dedupe_requirement_docs(db: Session, *, project_id: str, apply: bool = False) -> dict:
+    """Find requirement docs that are byte-identical (same content hash) and, on
+    ``apply``, delete all but the newest of each group, the redundant copies that
+    would multi-count coverage. A dry run by default (WO#9-C)."""
+    docs = list(db.execute(
+        select(RequirementDoc).where(RequirementDoc.project_id == project_id)
+        .order_by(RequirementDoc.created_at.desc())
+    ).scalars())
+    by_hash: dict[str, list] = {}
+    for d in docs:
+        by_hash.setdefault(d.content_sha256, []).append(d)   # newest first
+
+    removed, groups = [], []
+    for _hash, group in by_hash.items():
+        if len(group) < 2:
+            continue
+        keep, drop = group[0], group[1:]
+        groups.append({"keep": keep.id, "title": keep.title,
+                       "duplicates": [d.id for d in drop]})
+        if apply:
+            for d in drop:
+                db.execute(delete(RequirementRule).where(RequirementRule.doc_id == d.id))
+                db.delete(d)
+                removed.append(d.id)
+    if apply and removed:
+        db.flush()
+    return {"ok": True, "applied": apply, "duplicate_groups": groups,
+            "removed": removed,
+            "summary": {"groups": len(groups), "removed": len(removed)}}
+
+
+def record_edit_example(db: Session, *, project_id: str, before: dict, after: dict,
+                        comment: str = "") -> None:
+    """Persist a reviewer's edit as a project few-shot example (WO#9-D).
+
+    When a human corrects a proposal, that correction is the most valuable signal the
+    generator has for what this team wants. Stored as durable project memory and fed
+    back into enrichment so future proposals drift toward the team's own style."""
+    from ..ai.memory import MemoryStore
+
+    if (before.get("title") == after.get("title")
+            and before.get("rationale") == after.get("rationale") and not comment):
+        return
+    parts = []
+    if after.get("title") and after.get("title") != before.get("title"):
+        parts.append(f"A proposal titled {before.get('title','')!r} was revised to "
+                     f"{after.get('title','')!r}.")
+    if after.get("rationale") and after.get("rationale") != before.get("rationale"):
+        parts.append(f"Its rationale became: {after['rationale'][:240]}")
+    if comment:
+        parts.append(f"Reviewer note: {comment[:240]}")
+    if not parts:
+        return
+    MemoryStore(db, project_id).write(
+        key=f"test_edit:{before.get('key','')}", content=" ".join(parts),
+        kind="test_style", source="review_edit", confidence=0.85, created_by_kind="human")
+
+
+def edit_examples(db: Session, project_id: str, *, query: str = "", limit: int = 5) -> list[str]:
+    """Recent reviewer-edit few-shots, to prime generation with the team's style."""
+    from ..ai.memory import MemoryStore
+
+    items = MemoryStore(db, project_id).recall(query or "test proposal style",
+                                               limit=limit, kinds=["test_style"])
+    return [it.content for it in items]
+
+
+async def regenerate_case(db: Session, *, project_id: str, case: TestCase, instruction: str,
+                          provider: LLMProvider | None) -> dict:
+    """Revise one proposal per a reviewer's instruction (WO#9-D). Model-backed; without
+    a model it returns a clear no-op rather than guessing."""
+    if provider is None:
+        return {"ok": False, "note": "Regenerating with an instruction needs a model. "
+                "Connect one in Settings → Model, or edit the case directly."}
+    schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "rationale": {"type": "string"},
+            "steps": {"type": "array", "items": {"type": "object", "properties": {
+                "intent": {"type": "string"}, "expected": {"type": "string"}},
+                "required": ["intent"], "additionalProperties": True}},
+        },
+        "required": ["title", "rationale", "steps"], "additionalProperties": False,
+    }
+    current = _serialize_case_for_prompt(case)
+    prompt = (
+        "Revise this test proposal per the instruction. Keep it concrete and testable; "
+        "do not invent behaviour the requirement never stated.\n\n"
+        f"INSTRUCTION: {instruction}\n\nCURRENT PROPOSAL:\n{current}"
+    )
+    from ..ai.prompts import system_prompt
+    try:
+        result = await provider.complete(
+            [Message(role=Role.USER, content=prompt)],
+            system=system_prompt(AgentRole.TEST_DESIGNER), max_tokens=1500,
+            temperature=0.3, response_format=schema)
+    except (NoAIModeError, ProviderError) as exc:
+        return {"ok": False, "note": f"the model was unavailable: {exc}"}
+    try:
+        revised = json.loads(result.text)
+    except json.JSONDecodeError:
+        return {"ok": False, "note": "the model did not return a usable revision"}
+
+    before = {"key": case.key, "title": case.title, "rationale": case.rationale}
+    case.title = str(revised.get("title") or case.title)[:400]
+    case.rationale = str(revised.get("rationale") or case.rationale)
+    if isinstance(revised.get("steps"), list) and revised["steps"]:
+        for existing in list(case.steps):
+            db.delete(existing)
+        db.flush()
+        for index, step in enumerate(revised["steps"]):
+            db.add(TestStep(
+                test_case_id=case.id, index=index,
+                action=step.get("action", StepAction.NOTE),
+                intent=str(step.get("intent", ""))[:600],
+                expected=str(step.get("expected", ""))[:600]))
+    case.version += 1
+    case.provenance = {**(case.provenance or {}), "regenerated": True,
+                       "instruction": instruction[:400]}
+    # The instruction is itself a style signal for next time.
+    record_edit_example(db, project_id=project_id, before=before,
+                        after={"title": case.title, "rationale": case.rationale},
+                        comment=instruction)
+    db.flush()
+    return {"ok": True, "instruction": instruction}
+
+
+def _serialize_case_for_prompt(case: TestCase) -> str:
+    lines = [f"Title: {case.title}", f"Rationale: {case.rationale}"]
+    for s in sorted(case.steps, key=lambda s: s.index):
+        lines.append(f"- {s.intent}" + (f" → expect: {s.expected}" if s.expected else ""))
+    return "\n".join(lines)
+
+
+def _rules_by_item(db: Session, project_id: str, items: list[RequirementItem]) -> dict:
+    ids = [i.id for i in items]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(RequirementRule).where(RequirementRule.item_id.in_(ids))
+        .order_by(RequirementRule.rule_id)
+    ).scalars()
+    grouped: dict[str, list[RequirementRule]] = {}
+    for r in rows:
+        grouped.setdefault(r.item_id, []).append(r)
+    return grouped
+
+
+def _assumptions(open_questions: list[str] | None) -> list[str]:
+    """Turn unresolved ambiguities into explicit ASSUMPTION tags (WO#9-B ambiguity
+    gate): a case is still generated, but on a stated best-effort reading the author
+    can confirm or correct, so nothing is silently guessed."""
+    return [
+        f"ASSUMPTION: {q} Generated on a best-effort reading; confirm with the author."
+        for q in (open_questions or [])
+    ][:5]
+
+
 def scaffold_proposals(db: Session, project_id: str, items: list[RequirementItem]) -> list[dict]:
     """Deterministic baseline. Runs with no model and is useful on its own."""
     from ..intelligence import testdesign
 
     proposals: list[dict] = []
+    rules_by_item = _rules_by_item(db, project_id, items)
+    # Map each item to its source document title, so the review board can group
+    # requirement-derived cases by origin ("Requirements · <doc>") (WO#9-D cosmetic).
+    doc_titles = {
+        d.id: d.title for d in db.execute(
+            select(RequirementDoc).where(RequirementDoc.project_id == project_id)
+        ).scalars()
+    }
     for item in items:
-        # Classical test design, applied by rule. This is the part of "AI reads
-        # the requirement and writes tests" that needs no model: once the input
-        # domain is known, boundary and partition analysis is arithmetic.
-        # The splitter sets `title` to the first sentence of `text`, so naively
-        # concatenating them analyses the same phrase twice and every pattern
-        # matches twice — producing duplicate variables and duplicate values.
-        source = item.text if item.title and item.title in item.text else (
-            f"{item.title}. {item.text}".strip(". ")
-        )
-        design = testdesign.analyse(source, subject=item.ref)
-        if design.values:
-            proposals.append(_design_proposal(item, design))
-        if design.decision_table:
-            proposals.append(_decision_proposal(item, design))
+        item_rules = rules_by_item.get(item.id, [])
+        rule_ids = [r.rule_id for r in item_rules]
+        assumptions = _assumptions(item.open_questions)
+
+        # Classical test design, applied *per atomic rule* so each technique case
+        # points at the exact rule it exercises (WO#9-B). No model needed: once the
+        # input domain is known, boundary/partition/pairwise analysis is mechanical.
+        if item_rules:
+            for rule in item_rules:
+                r_design = testdesign.analyse(rule.text, subject=rule.rule_id)
+                if r_design.values:
+                    proposals.append(_design_proposal(item, r_design, covers=[rule.rule_id]))
+                if r_design.decision_table:
+                    proposals.append(_decision_proposal(item, r_design, covers=[rule.rule_id]))
+                if r_design.pairwise:
+                    proposals.append(_pairwise_proposal(item, r_design, covers=[rule.rule_id]))
+        else:
+            # No persisted rules (legacy path): fall back to item-level design.
+            source = item.text if item.title and item.title in item.text else (
+                f"{item.title}. {item.text}".strip(". ")
+            )
+            design = testdesign.analyse(source, subject=item.ref)
+            if design.values:
+                proposals.append(_design_proposal(item, design))
+            if design.decision_table:
+                proposals.append(_decision_proposal(item, design))
 
         happy_title = _happy_title(item)
         proposals.append({
@@ -187,6 +456,8 @@ def scaffold_proposals(db: Session, project_id: str, items: list[RequirementItem
                 "requirement text; steps still need authoring against the real UI."
             ),
             "requirement_refs": [item.ref],
+            "covers": rule_ids,
+            "assumptions": assumptions,
             "tags": _tags(item),
             "steps": _scaffold_steps(item),
             "source": "deterministic",
@@ -194,12 +465,13 @@ def scaffold_proposals(db: Session, project_id: str, items: list[RequirementItem
 
         for index, criterion in enumerate(item.acceptance_criteria[:4]):
             proposals.append({
-                "title": f"{item.ref} — acceptance criterion {index + 1}: {criterion[:90]}",
+                "title": f"{item.ref} acceptance criterion {index + 1}: {criterion[:90]}",
                 "category": TestCategory.AUTOMATED,
                 "priority": _priority(item.risk),
                 "risk": item.risk,
                 "rationale": f"Directly exercises an acceptance criterion stated in {item.ref}.",
                 "requirement_refs": [item.ref],
+                "covers": rule_ids,
                 "tags": _tags(item),
                 "steps": [{"action": StepAction.NOTE, "intent": criterion[:400],
                            "expected": "as stated in the acceptance criterion"}],
@@ -208,7 +480,7 @@ def scaffold_proposals(db: Session, project_id: str, items: list[RequirementItem
 
         if item.risk in {"high", "critical"}:
             proposals.append({
-                "title": f"{item.ref} — negative path and error handling",
+                "title": f"{item.ref}: negative path and error handling",
                 "category": TestCategory.AUTOMATED,
                 "priority": "high",
                 "risk": item.risk,
@@ -218,6 +490,7 @@ def scaffold_proposals(db: Session, project_id: str, items: list[RequirementItem
                     "went wrong and nothing is silently lost."
                 ),
                 "requirement_refs": [item.ref],
+                "covers": rule_ids,
                 "tags": [*_tags(item), "negative"],
                 "steps": [{"action": StepAction.NOTE,
                            "intent": _negative_intent(item),
@@ -227,7 +500,7 @@ def scaffold_proposals(db: Session, project_id: str, items: list[RequirementItem
 
         if item.open_questions:
             proposals.append({
-                "title": f"{item.ref} — exploratory: unresolved ambiguity",
+                "title": f"{item.ref} exploratory: unresolved ambiguity",
                 "category": TestCategory.EXPLORATORY,
                 "priority": "medium",
                 "risk": item.risk,
@@ -237,6 +510,8 @@ def scaffold_proposals(db: Session, project_id: str, items: list[RequirementItem
                     "exploration and turns the findings into a question for the author."
                 ),
                 "requirement_refs": [item.ref],
+                "covers": rule_ids,
+                "assumptions": assumptions,
                 "tags": [*_tags(item), "exploratory"],
                 "charter": (
                     f"Explore {item.title[:140]} for 30 minutes. Open questions to resolve: "
@@ -246,7 +521,73 @@ def scaffold_proposals(db: Session, project_id: str, items: list[RequirementItem
                 "source": "deterministic",
             })
 
+    proposals.extend(_section_pairwise(items, rules_by_item))
+    # Stamp the source doc title onto every requirement-derived proposal for grouping.
+    ref_to_doc = {i.ref.upper(): doc_titles.get(i.doc_id, "") for i in items}
+    for prop in proposals:
+        refs = [r.upper() for r in prop.get("requirement_refs", [])]
+        title = next((ref_to_doc[r] for r in refs if r in ref_to_doc), "")
+        if title:
+            prop["doc_title"] = title
     return dedupe(proposals)
+
+
+def _section_pairwise(items: list[RequirementItem], rules_by_item: dict) -> list[dict]:
+    """Pairwise across parameters stated as *separate* rules in the same section.
+
+    A PRD often lists "shipping is one of …" and "payment is one of …" as two
+    bullets. Each rule alone has one enum, but the interesting defects live in their
+    combination. This groups a section's enum/boolean parameters and emits one
+    pairwise data-driven case over them, covering every contributing rule (WO#9-B).
+    """
+    from ..intelligence import testdesign
+
+    sections: dict[tuple, dict] = {}
+    for item in items:
+        key = tuple((item.source_anchor or {}).get("heading_path") or [item.section or ""])
+        bucket = sections.setdefault(key, {"params": {}, "covers": [], "item": item})
+        for rule in rules_by_item.get(item.id, []):
+            for var in (rule.constraints or {}).get("variables", []):
+                if var.get("kind") == "enum" and len(var.get("values", [])) > 1:
+                    name = var["name"]
+                    if name not in bucket["params"]:
+                        bucket["params"][name] = list(dict.fromkeys(var["values"]))
+                        bucket["covers"].append(rule.rule_id)
+
+    out: list[dict] = []
+    for key, bucket in sections.items():
+        params = bucket["params"]
+        if sum(len(v) > 1 for v in params.values()) < 2:
+            continue
+        rows = testdesign.pairwise(params)
+        if not rows:
+            continue
+        item = bucket["item"]
+        label = key[-1] if key and key[-1] else "the section"
+        steps = [{
+            "action": StepAction.NOTE,
+            "intent": " · ".join(f"{k}={v}" for k, v in row.items()),
+            "expected": "the combination behaves per the requirements",
+        } for row in rows[:24]]
+        out.append({
+            "title": f"{label}: pairwise over {', '.join(list(params)[:3])}",
+            "category": TestCategory.AUTOMATED,
+            "priority": "medium",
+            "risk": "medium",
+            "rationale": (
+                f"{len(params)} parameters combine across the '{label}' section. Pairwise "
+                f"covers every pair of values in {len(rows)} rows instead of the full "
+                "cross-product, catching interaction defects without a combinatorial blow-up."
+            ),
+            "requirement_refs": sorted({rid.rsplit("-R", 1)[0] for rid in bucket["covers"]}),
+            "covers": bucket["covers"],
+            "technique": "pairwise",
+            "tags": ["pairwise", "data-driven"],
+            "steps": steps,
+            "test_data": {"parameters": list(params), "rows": rows},
+            "source": "test_design",
+        })
+    return out
 
 
 async def enrich_proposals(
@@ -371,14 +712,22 @@ async def generate(
     if not items:
         return {"proposals": [], "note": "No requirements have been ingested yet."}
 
+    # Backfill rules for any item ingested before rule extraction existed (WO#9-B).
+    extract_and_persist_rules(db, project_id=project_id, items=items, skip_existing=True)
     baseline = scaffold_proposals(db, project_id, items)
     source = "deterministic"
 
     if provider is not None:
         try:
+            context = _context(db, project_id)
+            examples = edit_examples(db, project_id)
+            if examples:
+                # Feed the team's own edits back so proposals drift toward their
+                # style rather than repeating what reviewers keep correcting (WO#9-D).
+                context += ("\n\nHOW THIS TEAM REVISES PROPOSALS (mirror this style):\n"
+                            + "\n".join(f"- {e}" for e in examples))
             baseline = await enrich_proposals(
-                provider, items=items, baseline=baseline,
-                project_context=_context(db, project_id),
+                provider, items=items, baseline=baseline, project_context=context,
             )
             source = "hybrid"
         except (NoAIModeError, ProviderError) as exc:
@@ -460,6 +809,8 @@ def persist_proposals(
             risk=proposal.get("risk", "medium"),
             rationale=proposal.get("rationale", ""),
             requirement_refs=proposal.get("requirement_refs", []),
+            # Finer traceability: the atomic rules this case exercises (WO#9-B).
+            covers=proposal.get("covers", []),
             tags=proposal.get("tags", []),
             preconditions=proposal.get("preconditions", []),
             charter=proposal.get("charter", ""),
@@ -471,6 +822,11 @@ def persist_proposals(
                 "origin": proposal.get("source", "deterministic"),
                 "author_kind": author_kind,
                 "generated_at": utcnow().isoformat(),
+                # So the review board can show *why* a case exists (WO#9-B/D).
+                "technique": proposal.get("technique", ""),
+                "covers": proposal.get("covers", []),
+                "assumptions": proposal.get("assumptions", []),
+                "doc_title": proposal.get("doc_title", ""),
             },
         )
         db.add(case)
@@ -582,7 +938,7 @@ def _existing_fingerprints(db: Session, project_id: str) -> list[list[float]]:
     return [r for r in rows if r]
 
 
-def _design_proposal(item: RequirementItem, design) -> dict:
+def _design_proposal(item: RequirementItem, design, *, covers: list[str] | None = None) -> dict:
     """One data-driven case carrying every derived value and its technique.
 
     Kept as a single case with a data table rather than one case per value: a
@@ -606,7 +962,7 @@ def _design_proposal(item: RequirementItem, design) -> dict:
             "action": StepAction.NOTE,
             "intent": (
                 f"[{value.technique.replace('_', ' ')}] set {value.variable} to "
-                f"{value.value!r} — {value.label}"
+                f"{value.value!r} ({value.label})"
             ),
             "expected": value.expected,
         })
@@ -616,7 +972,7 @@ def _design_proposal(item: RequirementItem, design) -> dict:
     ] + list(item.open_questions or [])
 
     return {
-        "title": f"{item.ref} — boundaries and partitions of {_domain_label(design)}",
+        "title": f"{item.ref}: boundaries and partitions of {_domain_label(design)}",
         "category": TestCategory.AUTOMATED,
         "priority": _priority(item.risk),
         "risk": item.risk,
@@ -628,6 +984,8 @@ def _design_proposal(item: RequirementItem, design) -> dict:
         ),
         "requirement_refs": [item.ref],
         "tags": [*_tags(item), "boundary-value", "equivalence-partition"],
+        "covers": covers or [],
+        "technique": "boundary_value",
         "preconditions": list(item.acceptance_criteria[:2]),
         "steps": steps,
         "test_data": {
@@ -641,7 +999,7 @@ def _design_proposal(item: RequirementItem, design) -> dict:
     }
 
 
-def _decision_proposal(item: RequirementItem, design) -> dict:
+def _decision_proposal(item: RequirementItem, design, *, covers: list[str] | None = None) -> dict:
     steps = [{
         "action": StepAction.NOTE,
         "intent": " · ".join(
@@ -652,7 +1010,7 @@ def _decision_proposal(item: RequirementItem, design) -> dict:
     } for row in design.decision_table]
 
     return {
-        "title": f"{item.ref} — decision table over {len(design.conditions)} condition(s)",
+        "title": f"{item.ref}: decision table over {len(design.conditions)} condition(s)",
         "category": TestCategory.AUTOMATED,
         "priority": _priority(item.risk),
         "risk": item.risk,
@@ -663,9 +1021,42 @@ def _decision_proposal(item: RequirementItem, design) -> dict:
         ),
         "requirement_refs": [item.ref],
         "tags": [*_tags(item), "decision-table"],
+        "covers": covers or [],
+        "technique": "decision_table",
         "steps": steps,
         "test_data": {"conditions": design.conditions,
                       "rows": [r.as_dict() for r in design.decision_table]},
+        "source": "test_design",
+    }
+
+
+def _pairwise_proposal(item: RequirementItem, design, *, covers: list[str] | None = None) -> dict:
+    """One data-driven case whose Examples table is the pairwise combinations of the
+    rule's discrete parameters. It covers every pair of values in far fewer rows
+    than the full cross-product (WO#9-B)."""
+    rows = design.pairwise
+    params = [v.name for v in design.variables if v.kind in ("enum", "boolean")]
+    steps = [{
+        "action": StepAction.NOTE,
+        "intent": " · ".join(f"{k}={v}" for k, v in row.items()),
+        "expected": "the combination behaves per the requirement",
+    } for row in rows[:24]]
+    return {
+        "title": f"{item.ref}: pairwise over {', '.join(params[:3]) or 'parameters'}",
+        "category": TestCategory.AUTOMATED,
+        "priority": _priority(item.risk),
+        "risk": item.risk,
+        "rationale": (
+            f"{item.ref} combines {len(params)} parameters. Pairwise covers every pair of "
+            f"values in {len(rows)} rows instead of the full cross-product, catching "
+            "interaction defects without a combinatorial explosion."
+        ),
+        "requirement_refs": [item.ref],
+        "tags": [*_tags(item), "pairwise"],
+        "covers": covers or [],
+        "technique": "pairwise",
+        "steps": steps,
+        "test_data": {"parameters": params, "rows": rows},
         "source": "test_design",
     }
 
@@ -678,8 +1069,8 @@ def _domain_label(design) -> str:
 def _happy_title(item: RequirementItem) -> str:
     text = item.title.rstrip(".")
     if text.lower().startswith(("the system", "the user", "users", "a user")):
-        return f"{item.ref} — {text}"
-    return f"{item.ref} — verify {text[0].lower()}{text[1:]}" if text else item.ref
+        return f"{item.ref}: {text}"
+    return f"{item.ref}: verify {text[0].lower()}{text[1:]}" if text else item.ref
 
 
 def _negative_intent(item: RequirementItem) -> str:
@@ -691,7 +1082,7 @@ def _negative_intent(item: RequirementItem) -> str:
     """
     subject = item.title.rstrip(". ").strip()[:180]
     return (
-        f"Exercise the failure path for {item.ref} — \u201c{subject}\u201d. "
+        f"Exercise the failure path for {item.ref}: \u201c{subject}\u201d. "
         "Drive it with invalid, missing or out-of-range input and observe what "
         "the user is told."
     )

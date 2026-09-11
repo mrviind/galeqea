@@ -78,13 +78,13 @@ def verify(db: Session, *, project_id: str) -> dict:
     }
 
 
-def push_results(db: Session, *, project_id: str, run_id: str, test_plan_key: str = "") -> dict:
+def push_results(db: Session, *, project_id: str, run_id: str, test_plan_key: str = "",
+                 environments: str = "") -> dict:
     from sqlalchemy import select
 
-    from ..models import Run, RunStatus, RunTest
+    from ..models import DefectLink, Run, RunStatus, RunTest, TestCase
 
     connection = load_connection(db, project_id=project_id, provider="xray")
-    token = authenticate(db, connection)
 
     run = db.get(Run, run_id)
     if run is None:
@@ -93,64 +93,98 @@ def push_results(db: Session, *, project_id: str, run_id: str, test_plan_key: st
     if not results:
         raise IntegrationError("that run has no results to push")
 
-    # Resolve every Xray key in one query rather than per result.
-    from ..models import TestCase
-
     case_ids = {r.test_case_id for r in results if r.test_case_id}
-    cases = {
-        c.id: c
-        for c in db.execute(select(TestCase).where(TestCase.id.in_(case_ids))).scalars()
-    }
+    cases = {c.id: c for c in db.execute(
+        select(TestCase).where(TestCase.id.in_(case_ids))).scalars()}
+    # Defects linked to any of these results, so the execution lists them.
+    defects_by_result: dict[str, list[str]] = {}
+    for link in db.execute(select(DefectLink).where(
+            DefectLink.result_id.in_([r.id for r in results]))).scalars():
+        defects_by_result.setdefault(link.result_id, []).append(link.key)
 
     status_map = {
-        RunStatus.PASSED: "PASSED",
-        RunStatus.FAILED: "FAILED",
-        RunStatus.ERROR: "FAILED",
-        RunStatus.SKIPPED: "TODO",
-        RunStatus.NEEDS_REVIEW: "TODO",
-        RunStatus.BLOCKED: "TODO",
+        RunStatus.PASSED: "PASSED", RunStatus.FLAKY: "PASSED",
+        RunStatus.FAILED: "FAILED", RunStatus.ERROR: "FAILED",
+        RunStatus.SKIPPED: "TODO", RunStatus.NEEDS_REVIEW: "TODO", RunStatus.BLOCKED: "TODO",
     }
-    payload = {
-        "info": {
-            "summary": f"GaleQEA run #{run.number} — {run.title}",
-            "description": (run.triage or {}).get("headline", ""),
-            "startDate": run.started_at.isoformat() if run.started_at else utcnow().isoformat(),
-            "finishDate": run.finished_at.isoformat() if run.finished_at else utcnow().isoformat(),
-            **({"testPlanKey": test_plan_key} if test_plan_key else {}),
-        },
-        "tests": [
-            {
-                "testKey": _xray_key(cases.get(result.test_case_id)),
-                "status": status_map.get(result.status, "FAILED"),
-                "comment": (result.error_message or "")[:2000] or result.title,
-            }
-            for result in results
-            if _xray_key(cases.get(result.test_case_id))
-        ],
+    xray_project = connection.config.get("project_key", "")
+    tests = []
+    for result in results:
+        case = cases.get(result.test_case_id)
+        entry: dict = {"status": status_map.get(result.status, "FAILED"),
+                       "comment": (result.error_message or "")[:2000] or result.title}
+        key = _xray_key(case)
+        if key:
+            entry["testKey"] = key
+        else:
+            # No Xray key → let Xray match/create by a STABLE definition (idempotent):
+            # the GaleQEA test key. Same run pushed twice updates the same test.
+            definition = (case.key if case else result.test_key) or result.title
+            entry["testInfo"] = {"projectKey": xray_project, "type": "Generic",
+                                 "summary": (case.title if case else result.title)[:250],
+                                 "definition": definition}
+            reqs = (case.requirement_refs if case else []) or []
+            if reqs:
+                entry["testInfo"]["requirementKeys"] = reqs
+        if defects_by_result.get(result.id):
+            entry["defects"] = defects_by_result[result.id]
+        tests.append(entry)
+
+    info = {
+        "summary": f"GaleQEA run #{run.number}: {run.title}",
+        "description": (run.triage or {}).get("headline", ""),
+        "startDate": run.started_at.isoformat() if run.started_at else utcnow().isoformat(),
+        "finishDate": run.finished_at.isoformat() if run.finished_at else utcnow().isoformat(),
     }
-    if not payload["tests"]:
-        raise IntegrationError(
-            "none of the results carry an Xray test key. Tag the tests with their Xray "
-            "key (e.g. 'xray:PROJ-123') so results can be matched."
-        )
+    if test_plan_key:
+        info["testPlanKey"] = test_plan_key
+    if environments:
+        info["testEnvironments"] = [e.strip() for e in environments.split(";") if e.strip()]
+    payload = {"info": info, "tests": tests}
+
+    # Xray DC speaks a different base + Jira auth; Cloud uses the bearer token.
+    if connection.config.get("deployment") == "dc":
+        dc_base = connection.require("base_url").rstrip("/")
+        headers = _dc_auth(connection)
+        url = f"{dc_base}/rest/raven/2.0/import/execution"
+    else:
+        token = authenticate(db, connection)
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        url = f"{BASE_URL}/import/execution"
 
     with http_client() as client:
-        response = client.post(
-            f"{BASE_URL}/import/execution",
-            json=payload,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        )
+        response = client.post(url, json=payload, headers=headers)
     if response.status_code >= 400:
         raise safe_error(response, provider="Xray")
 
     body = response.json()
+    key = body.get("key") or ((body.get("testExecIssue") or {}).get("key"))
     return {
         "ok": True,
-        "test_execution_key": body.get("key"),
-        "pushed": len(payload["tests"]),
-        "skipped": len(results) - len(payload["tests"]),
+        "test_execution_key": key,
+        "exec_key": key,
+        "pushed": len(tests),
+        "skipped": 0,
         "url": body.get("self", ""),
     }
+
+
+def _dc_auth(connection) -> dict:
+    """Xray Data Center authenticates as Jira: a PAT bearer, or basic email:token."""
+    import base64
+    headers = {"Content-Type": "application/json"}
+    pat = (connection.secrets.get("pat") if hasattr(connection, "secrets") else None)
+    try:
+        pat = connection.secret("pat")
+    except IntegrationError:
+        pat = None
+    if pat:
+        headers["Authorization"] = f"Bearer {pat}"
+    else:
+        cred = base64.b64encode(
+            f"{connection.require('email')}:{connection.secret('api_token')}".encode()).decode()
+        headers["Authorization"] = f"Basic {cred}"
+    return headers
 
 
 def _xray_key(case) -> str:

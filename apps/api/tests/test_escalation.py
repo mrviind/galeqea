@@ -1,4 +1,4 @@
-"""escalate_to_human — the agent's responsible hand-off."""
+"""escalate_to_human: the agent's responsible hand-off."""
 
 from __future__ import annotations
 

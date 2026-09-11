@@ -2,7 +2,7 @@
 
 These are not unit tests of behaviour; they are guardrails on the *contract*.
 Each one encodes a published rule, cites it, and fails when a future tool
-quietly breaks it — which is the failure mode that otherwise shows up months
+quietly breaks it, which is the failure mode that otherwise shows up months
 later as "the model keeps picking the wrong tool" with no obvious cause.
 """
 
@@ -108,7 +108,7 @@ def test_browser_only_payload_is_kept_out_of_the_model_context():
     what matters."
 
     `_ui` exists to drive the workspace panes and duplicates data already in the
-    result — for a generated script, a second full copy of both files.
+    result: for a generated script, a second full copy of both files.
     """
     result = {
         "ok": True,

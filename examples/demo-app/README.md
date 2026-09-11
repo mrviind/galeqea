@@ -9,8 +9,8 @@ make demo          # serves on http://localhost:8765
 
 It contains, on purpose:
 
-- a `getByLabel`-addressable email field (no test id) — exercises the label rung;
-- a `data-testid` card field — the element used in the healing demo, where the
+- a `getByLabel`-addressable email field (no test id), which exercises the label rung;
+- a `data-testid` card field, the element used in the healing demo, where the
   test id is renamed to force a heal;
 - a `getByRole('button', { name: 'Confirm payment' })` submit control;
 - two validation paths with distinct, actionable error messages;

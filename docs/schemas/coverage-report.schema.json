@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galeqea.dev/schemas/coverage-report.schema.json",
+  "title": "GaleQEA coverage report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report",
+    "project_id",
+    "href",
+    "summary",
+    "by_risk",
+    "uncovered",
+    "weak"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "report": {
+      "const": "coverage"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "href": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_requirements",
+        "covered_requirements",
+        "coverage_pct",
+        "automation_pct"
+      ],
+      "properties": {
+        "total_requirements": {
+          "type": "number"
+        },
+        "covered_requirements": {
+          "type": "number"
+        },
+        "coverage_pct": {
+          "type": "number"
+        },
+        "automation_pct": {
+          "type": "number"
+        }
+      }
+    },
+    "by_risk": {
+      "type": "object"
+    },
+    "uncovered": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "href",
+          "ui_href",
+          "ref",
+          "risk"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "ui_href": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "weak": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "href",
+          "ui_href",
+          "ref"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "ui_href": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "headline": {
+      "type": "string"
+    }
+  }
+}

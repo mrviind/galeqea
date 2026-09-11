@@ -18,6 +18,7 @@ from ..integrations.testcases import TARGETS as _PUSH_TARGETS
 from ..models import (
     ApprovalRequest,
     HealEvent,
+    Project,
     RCAReport,
     RequirementItem,
     RiskTier,
@@ -88,6 +89,8 @@ def list_tests(args: dict, ctx: ToolContext) -> dict:
                 "status": r.status, "priority": r.priority, "risk": r.risk,
                 "tags": r.tags, "steps": len(r.steps),
                 "requirement_refs": r.requirement_refs,
+                "covers": r.covers or [],
+                "technique": (r.provenance or {}).get("technique", ""),
                 "flake_score": round(r.flake_score, 2),
                 "last_status": r.last_status, "quarantined": r.quarantined,
             }
@@ -172,6 +175,107 @@ def get_run(args: dict, ctx: ToolContext) -> dict:
             for r in results
         ],
     }
+
+
+@registry.register(
+    "get_run_report",
+    description=(
+        "The structured report for one run: results grouped by test type, a "
+        "release-readiness verdict, and the model cost (0 calls / 0 tokens / $0 for "
+        "an ordinary re-run, since execution and deterministic healing call no model). "
+        "This is the machine-readable report, identical to /runs/{id}/report.json "
+        "and the MCP resource galeqea://{project}/runs/{id}/report. Accepts a run id, "
+        "or omit it for the most recent run. Prefer this over get_run when you want "
+        "the report an external tool would consume."
+    ),
+    parameters={"properties": {
+        "run_id": {"type": "string", "description": "Run id. Omit, or set latest, for the most recent run."},
+        "latest": {"type": "boolean", "description": "Return the most recent run's report."},
+    }},
+    category="runs",
+    scopes=["runs:read"],
+    title="Structured run report (JSON)",
+)
+def get_run_report(args: dict, ctx: ToolContext) -> dict:
+    from ..reports.runs import build_run_report
+
+    if args.get("run_id"):
+        run = ctx.db.get(Run, args["run_id"])
+        if run is not None and run.project_id != ctx.project_id:
+            run = None
+    else:
+        run = ctx.db.execute(
+            select(Run).where(Run.project_id == ctx.project_id)
+            .order_by(Run.created_at.desc()).limit(1)
+        ).scalar_one_or_none()
+    if run is None:
+        return {"ok": False, "error": "no run found"}
+    project = ctx.db.get(Project, ctx.project_id)
+    return build_run_report(ctx.db, project, run)
+
+
+@registry.register(
+    "list_schedules",
+    description=(
+        "List the project's scheduled runs: name, cron, timezone, environment, "
+        "whether each is enabled, and when it last fired and fires next. Use it to "
+        "see what runs on its own before creating another with schedule_run. It is "
+        "read-only and changes nothing. A schedule is created with schedule_run and "
+        "reviewed here."
+    ),
+    parameters={"properties": {}},
+    category="runs",
+    scopes=["runs:read"],
+    title="List scheduled runs",
+)
+def list_schedules(args: dict, ctx: ToolContext) -> dict:
+    from ..models import Schedule
+
+    rows = list(ctx.db.execute(
+        select(Schedule).where(Schedule.project_id == ctx.project_id).order_by(Schedule.name)
+    ).scalars())
+    return {
+        "ok": True,
+        "count": len(rows),
+        "schedules": [
+            {
+                "id": s.id, "name": s.name, "cron": s.cron, "timezone": s.timezone,
+                "environment": s.environment, "enabled": s.enabled,
+                "last_fired_at": s.last_fired_at.isoformat() if s.last_fired_at else None,
+                "next_fire_at": s.next_fire_at.isoformat() if s.next_fire_at else None,
+            }
+            for s in rows
+        ],
+    }
+
+
+@registry.register(
+    "export_test",
+    description=(
+        "Render a stored test as runnable source with no GaleQEA dependency: "
+        "Playwright (TypeScript or Python), Robot Framework or Cucumber. The test "
+        "is yours; this is the door out. Because a test is data, exporting is a "
+        "rendering, not a rewrite. Returns the code as text."
+    ),
+    parameters={"properties": {
+        "test_id_or_key": {"type": "string", "description": "Test id or key, e.g. DEMO-T-0042."},
+        "target": {"type": "string", "enum": ["playwright", "playwright_python", "robot", "cucumber"],
+                   "description": "Output format. Default playwright (TypeScript)."},
+    }, "required": ["test_id_or_key"]},
+    category="tests",
+    scopes=["tests:read"],
+    title="Export a test as runnable code",
+)
+def export_test(args: dict, ctx: ToolContext) -> dict:
+    from ..engine.codegen import render
+
+    case = _find_test(ctx, args["test_id_or_key"])
+    if case is None:
+        return {"ok": False, "error": f"no test matching {args['test_id_or_key']!r}"}
+    project = ctx.db.get(Project, ctx.project_id)
+    base_url = (project.environments or {}).get(project.default_environment, "") if project else ""
+    code = render(case, target=args.get("target", "playwright"), base_url=base_url)
+    return {"ok": True, "test": case.key, "target": args.get("target", "playwright"), "code": code}
 
 
 @registry.register(
@@ -886,7 +990,7 @@ def _apply_jira(db, request: ApprovalRequest) -> dict:
         "the application. It renders each approved test to a Playwright file, puts "
         "them on a new branch, and opens a PR against the default branch. Because "
         "a pull request writes to a repository other people review and merge, it "
-        "files an approval and returns its id — nothing is pushed until a human "
+        "files an approval and returns its id. Nothing is pushed until a human "
         "accepts. Only tests that are already approved are included; proposed or "
         "rejected ones are never pushed. Requires a connected git provider "
         "(GitHub, GitLab or Bitbucket)."
@@ -938,7 +1042,7 @@ def open_test_pull_request(args: dict, ctx: ToolContext) -> dict:
         approved = [c for c in approved if c.key.upper() in keys]
     if not approved:
         return {"ok": False, "error": (
-            "No approved tests match — a PR would be empty. Approve some tests first, "
+            "No approved tests match, so a PR would be empty. Approve some tests first, "
             "or check the keys." )}
     return {"target": f"{len(approved)} approved test(s) → pull request"}
 
@@ -1099,7 +1203,7 @@ def _apply_push_test_cases(db, request: ApprovalRequest) -> dict:
 
 
 def _select_for_push(db, project_id: str, args: dict) -> list[TestCase]:
-    """Only approved cases leave the building — a proposal is not a test yet."""
+    """Only approved cases leave the building. A proposal is not a test yet."""
     stmt = select(TestCase).where(
         TestCase.project_id == project_id, TestCase.status == TestStatus.APPROVED
     )
@@ -1265,7 +1369,13 @@ def _serialize_test(case: TestCase) -> dict:
         "status": case.status, "priority": case.priority, "risk": case.risk,
         "tags": case.tags, "rationale": case.rationale,
         "preconditions": case.preconditions, "charter": case.charter,
-        "requirement_refs": case.requirement_refs, "provenance": case.provenance,
+        "requirement_refs": case.requirement_refs,
+        # Rule-level traceability so an agent reading a test sees which rule it
+        # covers and by what technique, without a second call (WO#9-C).
+        "covers": case.covers or [],
+        "technique": (case.provenance or {}).get("technique", ""),
+        "assumptions": (case.provenance or {}).get("assumptions", []),
+        "provenance": case.provenance,
         "version": case.version, "approved_by": case.approved_by,
         "flake_score": round(case.flake_score, 3), "quarantined": case.quarantined,
         "steps": [
@@ -1319,3 +1429,519 @@ def tool_catalog() -> list[dict]:
         }
         for t in sorted(registry.all(), key=lambda t: (t.category, t.name))
     ]
+
+
+@registry.register(
+    name="approve_plan",
+    description=(
+        "Approve a proposed Golden Path plan for a target so its tests become "
+        "runnable. This decision is human-only. An AI principal can never satisfy "
+        "an approval gate, so for an agent caller this returns guidance instead of "
+        "approving. Propose the plan first via the on-ramp or `galeqea plan propose`."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "target": {"type": "string",
+                       "description": "the target URL whose pending plan to approve"},
+        },
+        "required": ["target"],
+    },
+    read_only=True,  # from an agent it never decides; it can only advise
+    category="governance",
+    scopes=["approvals:decide"],
+)
+def approve_plan(args: dict, ctx: ToolContext) -> dict:
+    from ..core import approvals
+    from ..models import User
+    from ..services import journeys, plan_approval
+
+    if ctx.actor_kind != "human_direct":
+        return {"ok": False, "human_only": True, "guidance": (
+            "Approving a plan is a human-only decision. An AI principal can never "
+            "satisfy an approval gate. Ask a human to approve it in the Approvals view, "
+            "with `galeqea plan approve <target>`, or "
+            "POST /api/projects/{id}/journeys/{journey}/plan/approve.")}
+    journey = journeys.for_target(ctx.db, ctx.project_id, args["target"])
+    if journey is None:
+        return {"ok": False, "error": "no journey for that target; propose a plan first"}
+    req = plan_approval.pending_for_journey(ctx.db, journey)
+    if req is None:
+        return {"ok": False, "error": "no plan is pending approval for that target"}
+    decider = ctx.db.get(User, ctx.actor_id)
+    outcome = approvals.approve(ctx.db, req.id, decider)
+    return {"ok": True, "approved": True, "keys": outcome.result.get("keys", [])}
+
+
+# --------------------------------------------------------------------------- #
+# Release management: the test-manager verbs, gate-respecting
+# --------------------------------------------------------------------------- #
+@registry.register(
+    "list_releases",
+    description=(
+        "List this project's releases (milestones) with their status, exit-criteria "
+        "count and current Go/No-Go readiness verdict. This is read-only and never "
+        "changes state, so it is safe to call first when orienting on a release. "
+        "Archived releases are hidden by default; pass include_archived to see them too."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "include_archived": {"type": "boolean",
+                                 "description": "Include archived releases (default false)."},
+        },
+    },
+    category="releases",
+    scopes=["releases:read"],
+    title="List releases and readiness",
+)
+def list_releases(args: dict, ctx: ToolContext) -> dict:
+    from ..models import Milestone
+    from ..services import release
+    q = select(Milestone).where(Milestone.project_id == ctx.project_id)
+    if not args.get("include_archived"):
+        q = q.where(Milestone.status != "archived")
+    rows = list(ctx.db.execute(q.order_by(Milestone.created_at.desc())).scalars())
+    out = []
+    for m in rows:
+        ev = release.evaluate_readiness(ctx.db, m)
+        out.append({"version": m.version, "name": m.name, "status": m.status,
+                    "exit_criteria": len(m.exit_criteria or []),
+                    "readiness": ev["verdict"], "signed_off": ev["signed_off"]})
+    return {"ok": True, "count": len(out), "releases": out}
+
+
+@registry.register(
+    "create_release",
+    description=(
+        "Propose a new release (milestone) for a version, e.g. '1.4'. Requires human "
+        "approval before it exists. Idempotent: if a live release with that version "
+        "already exists, approving the request is a no-op that returns the existing one."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "version": {"type": "string", "description": "Version string, e.g. '1.4'."},
+            "name": {"type": "string", "description": "Optional display name; defaults to 'Release <version>'."},
+            "target_date": {"type": "string", "description": "Optional ISO date (YYYY-MM-DD) the release is due."},
+        },
+        "required": ["version"],
+    },
+    read_only=False,
+    approval_action="milestone.create",
+    risk=RiskTier.LOW,
+    category="releases",
+    scopes=["releases:write"],
+)
+def create_release(args: dict, ctx: ToolContext) -> dict:
+    return {"proposed": args["version"]}
+
+
+@applier("milestone.create")
+def _apply_create_release(db, request: ApprovalRequest) -> dict:
+    from ..services import release
+    args = (request.payload or {}).get("arguments", {})
+    version = args["version"]
+    project = db.get(Project, request.project_id)
+    existing = release.milestone_for(db, request.project_id, version)
+    if existing is not None:
+        return {"milestone_id": existing.id, "version": existing.version, "existing": True}
+    target = None
+    raw = args.get("target_date")
+    if raw:
+        from datetime import UTC, datetime
+        try:
+            target = datetime.strptime(raw[:10], "%Y-%m-%d").replace(tzinfo=UTC)
+        except ValueError:
+            target = None
+    m = release.create_milestone(db, project, name=args.get("name", ""),
+                                 version=version, target_date=target)
+    return {"milestone_id": m.id, "version": m.version, "existing": False}
+
+
+@registry.register(
+    "archive_release",
+    description=(
+        "Archive a release by version. It stays in history but drops out of the "
+        "default list and frees the version for reuse. This is reversible: an archived "
+        "release can be recreated at the same version. The archive itself requires human "
+        "approval before it takes effect."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {"version": {"type": "string", "description": "Version to archive, e.g. '1.4'."}},
+        "required": ["version"],
+    },
+    read_only=False,
+    approval_action="milestone.archive",
+    risk=RiskTier.LOW,
+    category="releases",
+    scopes=["releases:write"],
+)
+def archive_release(args: dict, ctx: ToolContext) -> dict:
+    return {"proposed_archive": args["version"]}
+
+
+@applier("milestone.archive")
+def _apply_archive_release(db, request: ApprovalRequest) -> dict:
+    from ..services import release
+    version = (request.payload or {}).get("arguments", {}).get("version")
+    m = release.milestone_for(db, request.project_id, version)
+    if m is None:
+        return {"ok": False, "error": f"no live release {version}"}
+    release.archive_milestone(db, m)
+    return {"archived": version, "milestone_id": m.id}
+
+
+@registry.register(
+    "delete_release",
+    description=(
+        "Permanently delete a release by version. Destructive and irreversible, so "
+        "prefer archive_release. Requires human approval at approver level or above."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {"version": {"type": "string", "description": "Version to delete."}},
+        "required": ["version"],
+    },
+    read_only=False,
+    destructive=True,
+    approval_action="milestone.delete",
+    risk=RiskTier.HIGH,
+    category="releases",
+    scopes=["releases:write"],
+)
+def delete_release(args: dict, ctx: ToolContext) -> dict:
+    return {"proposed_delete": args["version"]}
+
+
+@applier("milestone.delete")
+def _apply_delete_release(db, request: ApprovalRequest) -> dict:
+    from ..models import Milestone
+    version = (request.payload or {}).get("arguments", {}).get("version")
+    # delete every milestone (live or archived) for that version
+    rows = list(db.execute(select(Milestone).where(
+        Milestone.project_id == request.project_id,
+        Milestone.version == version)).scalars())
+    if not rows:
+        return {"ok": False, "error": f"no release {version}"}
+    from ..services import release
+    for m in rows:
+        release.delete_milestone(db, m)
+    return {"deleted": version, "count": len(rows)}
+
+
+@registry.register(
+    "sign_off_release",
+    description=(
+        "Record the Go/No-Go sign-off for a release. This decision is human-only and "
+        "immutable. An AI principal can never sign off a release, so for an agent "
+        "caller this returns guidance instead of signing. A GO against a NO-GO readiness "
+        "verdict is an override and requires a note."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "version": {"type": "string", "description": "Version to sign off."},
+            "decision": {"type": "string", "enum": ["go", "no_go"]},
+            "note": {"type": "string", "description": "Reviewer note; required when overriding a NO-GO readiness."},
+        },
+        "required": ["version", "decision"],
+    },
+    read_only=True,  # from an agent it never decides; it can only advise
+    category="releases",
+    scopes=["approvals:decide"],
+)
+def sign_off_release(args: dict, ctx: ToolContext) -> dict:
+    from ..core.approvals import SelfApprovalError
+    from ..models import User
+    from ..services import release
+    if ctx.actor_kind != "human_direct":
+        return {"ok": False, "human_only": True, "guidance": (
+            "Signing off a release is a human-only decision. An AI principal can never "
+            "sign. Ask an approver to sign off in the Releases view, with the chat command "
+            "'sign off <version> as go', or POST /api/projects/{id}/milestones/{id}/signoff.")}
+    m = release.milestone_for(ctx.db, ctx.project_id, args["version"])
+    if m is None:
+        return {"ok": False, "error": f"no release {args['version']}"}
+    decider = ctx.db.get(User, ctx.actor_id)
+    try:
+        release.sign_off(ctx.db, m, decider=decider, decision=args["decision"],
+                         note=args.get("note", ""))
+    except SelfApprovalError as exc:
+        return {"ok": False, "error": str(exc)}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "signed_off": True, "version": m.version,
+            "decision": m.signoff["decision"], "override": m.signoff.get("override", False)}
+
+
+# --------------------------------------------------------------------------- #
+# Defects: file a tracked bug from a failing result (gated, idempotent)
+# --------------------------------------------------------------------------- #
+@registry.register(
+    "file_defect",
+    description=(
+        "File a tracked defect from a failing test result in the connected issue "
+        "tracker (Jira first, then GitHub/GitLab). The reproduction steps, "
+        "environment/build/browser and run links are built from the result, and "
+        "evidence (screenshot, trace, logs) is attached. Filing is idempotent: the "
+        "same underlying failure comments on the existing issue and bumps its "
+        "re-occurrence count rather than opening a duplicate. This writes to an "
+        "external system, so it files an approval and nothing appears in the tracker "
+        "until a human accepts."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "run_test_id": {"type": "string",
+                            "description": "The failing result (RunTest id) to file a bug for."},
+            "provider": {"type": "string", "enum": ["jira", "github", "gitlab"],
+                         "description": "Tracker to use; defaults to the connected one (Jira preferred)."},
+        },
+        "required": ["run_test_id"],
+    },
+    read_only=False,
+    external=True,
+    approval_action="defect.create",
+    risk=RiskTier.HIGH,
+    category="integrations",
+    scopes=["integrations:write"],
+)
+def file_defect(args: dict, ctx: ToolContext) -> dict:
+    return {"proposed_defect_for": args["run_test_id"]}
+
+
+@applier("defect.create")
+def _apply_file_defect(db, request: ApprovalRequest) -> dict:
+    from ..models import User
+    from ..services import defects
+    args = (request.payload or {}).get("arguments", {})
+    project = db.get(Project, request.project_id)
+    decider = db.get(User, request.decided_by) if request.decided_by else None
+    return defects.file_defect(db, project, run_test_id=args["run_test_id"],
+                               actor=decider, provider=args.get("provider"))
+
+
+# --------------------------------------------------------------------------- #
+# Jira → tests: import stories (gated) and write coverage back (gated)
+# --------------------------------------------------------------------------- #
+@registry.register(
+    "import_jira_stories",
+    description=(
+        "Import Jira stories into GaleQEA as requirements, so tests can be generated "
+        "for them through the normal review board. Give a selector: a sprint "
+        "(\"sprint in openSprints()\" or a sprint name), a fixVersion, or raw JQL. Each "
+        "story becomes a requirement keyed by its Jira key, with a source anchor so "
+        "re-imports are idempotent and a later description change marks the linked tests "
+        "stale. This writes requirement records, so it files an approval first."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "selector": {"type": "string",
+                         "description": "Sprint name / 'open sprint', 'fixVersion X', or raw JQL."},
+        },
+        "required": ["selector"],
+    },
+    read_only=False,
+    external=True,
+    approval_action="story.import",
+    risk=RiskTier.LOW,
+    category="integrations",
+    scopes=["requirements:write"],
+)
+def import_jira_stories(args: dict, ctx: ToolContext) -> dict:
+    return {"proposed_import": args["selector"]}
+
+
+@applier("story.import")
+def _apply_import_jira_stories(db, request: ApprovalRequest) -> dict:
+    from ..models import User
+    from ..services import story_import
+    args = (request.payload or {}).get("arguments", {})
+    project = db.get(Project, request.project_id)
+    actor = db.get(User, request.decided_by) if request.decided_by else None
+    return story_import.import_stories(db, project, selector=args["selector"], actor=actor)
+
+
+@registry.register(
+    "write_back_jira_coverage",
+    description=(
+        "Tell a Jira story which approved GaleQEA tests cover it, by commenting on the "
+        "issue (and, once the test exists as a Jira/Xray issue, adding a \"Test\" link). "
+        "Use it after tests generated from an imported story are approved, so the "
+        "coverage is visible to people working in Jira. This posts to Jira, so it files "
+        "an approval and nothing is written until a human accepts."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "ref": {"type": "string", "description": "The Jira issue key, e.g. XSP-16."},
+        },
+        "required": ["ref"],
+    },
+    read_only=False,
+    external=True,
+    approval_action="jira.writeback",
+    risk=RiskTier.MEDIUM,
+    category="integrations",
+    scopes=["integrations:write"],
+)
+def write_back_jira_coverage(args: dict, ctx: ToolContext) -> dict:
+    return {"proposed_writeback": args["ref"]}
+
+
+@applier("jira.writeback")
+def _apply_jira_writeback(db, request: ApprovalRequest) -> dict:
+    from ..models import User
+    from ..services import story_import
+    args = (request.payload or {}).get("arguments", {})
+    project = db.get(Project, request.project_id)
+    actor = db.get(User, request.decided_by) if request.decided_by else None
+    return story_import.write_back_coverage(db, project, ref=args["ref"], actor=actor)
+
+
+# --------------------------------------------------------------------------- #
+# Results → TMS: push a run to Xray / Zephyr Scale / TestRail (gated, idempotent)
+# --------------------------------------------------------------------------- #
+@registry.register(
+    "push_results",
+    description=(
+        "Push a finished run's results to a test-management system: Xray, Zephyr "
+        "Scale or TestRail. Results are matched to each system's own test identity "
+        "(an Xray key or stable definition, a Zephyr PROJ-T key in the test name, a "
+        "TestRail case id tag). Pushing is idempotent per run+target: re-pushing "
+        "returns the stored execution key instead of creating a duplicate. This writes "
+        "to an external system, so it files an approval first."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "run_id": {"type": "string", "description": "The run to push."},
+            "provider": {"type": "string", "enum": ["xray", "zephyr_scale", "testrail"]},
+            "target": {"type": "string",
+                       "description": "Optional: Xray test plan key / Zephyr cycle name / TestRail run name."},
+            "environments": {"type": "string",
+                             "description": "Xray only: test environments, ';'-separated (e.g. 'chrome;staging')."},
+        },
+        "required": ["run_id", "provider"],
+    },
+    read_only=False,
+    external=True,
+    approval_action="results.push",
+    risk=RiskTier.HIGH,
+    category="integrations",
+    scopes=["integrations:write"],
+)
+def push_results(args: dict, ctx: ToolContext) -> dict:
+    return {"proposed_push": args["run_id"], "provider": args["provider"]}
+
+
+@applier("results.push")
+def _apply_push_results(db, request: ApprovalRequest) -> dict:
+    from ..models import User
+    from ..services import results_push
+    args = (request.payload or {}).get("arguments", {})
+    project = db.get(Project, request.project_id)
+    actor = db.get(User, request.decided_by) if request.decided_by else None
+    return results_push.push(db, project, run_id=args["run_id"], provider=args["provider"],
+                             target=args.get("target", ""),
+                             environments=args.get("environments", ""), actor=actor)
+
+
+# --------------------------------------------------------------------------- #
+# Confluence: publish a release report (gated, updates the same page in place)
+# --------------------------------------------------------------------------- #
+@registry.register(
+    "publish_release_report",
+    description=(
+        "Publish a release's report to Confluence as a page (tables + Go/No-Go status "
+        "macros), under a fixed parent and labelled 'test-report'. Re-publishing updates "
+        "the same page in place (version+1) rather than making a new one, so the link is "
+        "stable. This writes to Confluence, so it files an approval and nothing is "
+        "published until a human accepts."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "version": {"type": "string", "description": "The release version, e.g. 1.4."},
+            "space_key": {"type": "string",
+                          "description": "Confluence space key to publish into (e.g. QA)."},
+        },
+        "required": ["version"],
+    },
+    read_only=False,
+    external=True,
+    approval_action="report.publish",
+    risk=RiskTier.MEDIUM,
+    category="integrations",
+    scopes=["integrations:write"],
+)
+def publish_release_report(args: dict, ctx: ToolContext) -> dict:
+    return {"proposed_publish": args["version"]}
+
+
+@applier("report.publish")
+def _apply_publish_report(db, request: ApprovalRequest) -> dict:
+    from ..models import User
+    from ..services import confluence_publish
+    args = (request.payload or {}).get("arguments", {})
+    project = db.get(Project, request.project_id)
+    actor = db.get(User, request.decided_by) if request.decided_by else None
+    return confluence_publish.publish_release_report(
+        db, project, version=args["version"], space_key=args.get("space_key", ""), actor=actor)
+
+
+# --------------------------------------------------------------------------- #
+# read_artifact: the model gets paths + summaries, and pulls bytes on demand
+# --------------------------------------------------------------------------- #
+@registry.register(
+    "read_artifact",
+    description=(
+        "Read a slice of a run artifact from disk by path: a full aria/DOM snapshot, "
+        "a HAR, or a console log. The agent is given artifact PATHS and one-line "
+        "summaries during a run, never the blobs; call this to pull just the lines you "
+        "need (e.g. range '1-80') instead of loading a whole 100KB file into the prompt. "
+        "Reads are confined to the artifacts directory. Returns the requested lines plus "
+        "the total line count."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Artifact path (must be under the run artifacts dir)."},
+            "range": {"type": "string",
+                      "description": "Optional line range, e.g. '1-80' or '120-160'. Defaults to the first 120 lines."},
+        },
+        "required": ["path"],
+    },
+    category="runs",
+    scopes=["runs:read"],
+    title="Read a slice of a run artifact",
+)
+def read_artifact(args: dict, ctx: ToolContext) -> dict:
+    import re
+    from pathlib import Path
+
+    from ..config import settings
+    root = Path(settings.artifacts_dir).resolve()
+    try:
+        target = Path(args["path"]).resolve()
+    except (OSError, ValueError):
+        return {"ok": False, "error": "invalid path"}
+    # Confinement: the resolved path must live under the artifacts root.
+    if root not in target.parents and target != root:
+        return {"ok": False, "error": "path is outside the artifacts directory"}
+    if not target.is_file():
+        return {"ok": False, "error": "no such artifact"}
+
+    lines = target.read_text(errors="replace").splitlines()
+    total = len(lines)
+    rng = (args.get("range") or "1-120").strip()
+    m = re.match(r"(\d+)\s*-\s*(\d+)", rng)
+    start, end = (int(m.group(1)), int(m.group(2))) if m else (1, 120)
+    start = max(start, 1)
+    slice_ = lines[start - 1:end]
+    return {"ok": True, "path": str(target), "total_lines": total,
+            "range": f"{start}-{min(end, total)}", "truncated": end < total,
+            "content": "\n".join(slice_)[:20000]}

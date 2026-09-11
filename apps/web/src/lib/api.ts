@@ -16,11 +16,25 @@ export class ApiError extends Error {
   }
 }
 
+function readCookie(name: string): string {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method || 'GET').toUpperCase();
+  // Double-submit CSRF: echo the readable csrf cookie back in a header on every
+  // cookie-authenticated mutation. Bearer/API-token callers don't use cookies.
+  const csrf = MUTATING.has(method) ? readCookie('galeqea_csrf') : '';
   const res = await fetch(`${BASE}${path}`, {
     ...init,
+    // Send the session + csrf cookies (same-origin in prod, cross-origin in dev).
+    credentials: 'include',
     headers: {
       ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(csrf ? { 'x-csrf-token': csrf } : {}),
       ...init?.headers,
     },
   });
@@ -49,6 +63,72 @@ export const api = {
   upload: <T>(p: string, form: FormData) => request<T>(p, { method: 'POST', body: form }),
 };
 
+// --- authentication (multi-user deployments) ------------------------------
+export interface AuthUser { id: string; email: string; name: string; role: string; }
+export interface AuthConfig { password_login: boolean; oidc_enabled: boolean; single_user_mode: boolean; }
+
+export const auth = {
+  config: () => api.get<AuthConfig>('/api/auth/config'),
+  me: () => api.get<AuthUser>('/api/auth/me'),
+  login: (email: string, password: string) =>
+    api.post<{ user: AuthUser; csrf_token: string }>('/api/auth/login', { email, password }),
+  logout: () => api.post<{ ok: boolean }>('/api/auth/logout'),
+};
+
+// --- scoped API tokens (Settings) -----------------------------------------
+export interface ApiToken {
+  id: string; name: string; prefix: string; scopes: string[];
+  expires_at: string | null; revoked: boolean; last_used_at: string | null; created_at: string | null;
+}
+export const tokens = {
+  list: () => api.get<ApiToken[]>('/api/tokens'),
+  create: (name: string, scopes: string[], ttl_days?: number | null) =>
+    api.post<ApiToken & { token: string }>('/api/tokens', { name, scopes, ttl_days: ttl_days ?? null }),
+  revoke: (id: string) => api.del<{ ok: boolean }>(`/api/tokens/${id}`),
+};
+
+// --- release management (WO#5) ---------------------------------------------
+export interface Milestone {
+  id: string; type?: string; name: string; version: string; status: string;
+  target_date: string | null; exit_criteria: { metric: string; op: string; value: number }[];
+  signoff: null | { by: string; decision: string; note?: string };
+}
+export interface Environment { id: string; name: string; base_url: string; build_label: string; tags: string[]; }
+export interface ReleaseMetrics {
+  counts: Record<string, number>; execution_progress: number; pass_rate: number;
+  requirement_coverage: number; tested_coverage: number; p1_requirement_coverage: number;
+  automation_ratio: number; flaky_rate: number; open_blockers: number; defect_density: number;
+  mttr_ms: number; effort_variance: number;
+}
+export interface Readiness { verdict: string; criteria: { metric: string; op: string; target: any; actual: any; met: boolean }[]; }
+
+export const releases = {
+  list: (pid: string) => api.get<{ milestones: Milestone[] }>(`/api/projects/${pid}/milestones`),
+  get: (pid: string, id: string) => api.get<Milestone>(`/api/projects/${pid}/milestones/${id}`),
+  create: (pid: string, body: Partial<Milestone>) => api.post<Milestone>(`/api/projects/${pid}/milestones`, body),
+  metrics: (pid: string, id: string) => api.get<ReleaseMetrics>(`/api/projects/${pid}/milestones/${id}/metrics.json`),
+  readiness: (pid: string, id: string) => api.get<Readiness>(`/api/projects/${pid}/milestones/${id}/readiness`),
+  signoff: (pid: string, id: string, decision: string, note?: string) =>
+    api.post<Milestone>(`/api/projects/${pid}/milestones/${id}/signoff`, { decision, note }),
+  cycles: (pid: string, milestoneId?: string) =>
+    api.get<{ cycles: any[] }>(`/api/projects/${pid}/cycles${milestoneId ? `?milestone_id=${milestoneId}` : ''}`),
+  environments: (pid: string) => api.get<{ environments: Environment[] }>(`/api/projects/${pid}/environments`),
+  addEnvironment: (pid: string, body: { name: string; base_url: string; tags?: string[] }) =>
+    api.post<Environment>(`/api/projects/${pid}/environments`, body),
+};
+
+export const defects = {
+  list: (pid: string) =>
+    api.get<{ defects: any[] }>(`/api/projects/${pid}/defects`),
+  forResult: (pid: string, resultId: string) =>
+    api.get<{ links: any[] }>(`/api/projects/${pid}/results/${resultId}/defects`),
+  propose: (pid: string, resultId: string, provider?: string) =>
+    api.post<{ status: string; approval_id: string; provider: string }>(
+      `/api/projects/${pid}/results/${resultId}/defect`, provider ? { provider } : {}),
+  refresh: (pid: string, mapId: string) =>
+    api.post<any>(`/api/projects/${pid}/defects/${mapId}/refresh`, {}),
+};
+
 // --- domain types ---------------------------------------------------------
 export type RunStatus =
   | 'queued' | 'running' | 'passed' | 'failed' | 'error'
@@ -72,14 +152,21 @@ export interface TestCase {
   status: 'proposed' | 'approved' | 'rejected' | 'draft' | 'archived';
   priority: string; risk: string; tags: string[]; rationale: string;
   preconditions: string[]; charter: string; requirement_refs: string[];
+  covers?: string[]; technique?: string; assumptions?: string[];
   provenance: Record<string, any>; version: number; approved_by: string | null;
   flake_score: number; quarantined: boolean; steps: TestStep[];
+}
+
+export interface CoveredRule {
+  rule_id: string; rule_type: string; technique: string; text: string;
+  requirement_ref: string; source_anchor: Record<string, any>;
 }
 
 export interface RunSummary {
   id: string; number: number; title: string; status: RunStatus;
   trigger: string; environment: string; totals: Record<string, number>;
   duration_ms: number; headline: string; created_at: string; finished_at: string | null;
+  queue_position?: number | null;
 }
 
 export interface RunResult {
@@ -97,6 +184,8 @@ export interface RunDetail {
   };
   results: RunResult[];
   artifacts: { id: string; kind: string; label: string; run_test_id: string | null; size_bytes: number }[];
+  by_test_type?: { type: string; label: string; total: number; passed: number; failed: number; skipped: number }[];
+  model_usage?: { calls: number; tokens: number; cost_usd: number; cache_hits: number; heals: number };
 }
 
 export interface ChatBlock { type: string; [k: string]: any }
@@ -105,7 +194,7 @@ export interface ChatMessage {
   id: string; role: 'user' | 'assistant' | 'system' | 'event';
   agent_role?: string; content: string; blocks: ChatBlock[];
   tool_calls: any[]; usage: Record<string, number>; error?: string; at: string;
-  /** Surfaced by the orchestrator — e.g. text in the message that tried to
+  /** Surfaced by the orchestrator, e.g. text in the message that tried to
    *  override the agent's instructions. Rendered above the blocks so it is read
    *  before anything in the reply is acted on. */
   warnings?: { kind: string; severity?: string; message: string }[];
@@ -134,8 +223,16 @@ export interface Overview {
   flaky: { key: string; title: string; score: number }[];
 }
 
+export interface BuildInfo {
+  version: string;
+  sha: string;
+  built_at: string | null;
+  started_at: string;
+}
+
 export interface Capabilities {
   version: string;
+  build?: BuildInfo;
   ai_modes: any[];
   tools: { name: string; category: string; description: string; read_only: boolean; requires_approval: boolean; risk: string; external: boolean }[];
   approval_actions: string[];
