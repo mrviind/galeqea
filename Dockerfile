@@ -17,7 +17,7 @@ RUN npm run build
 # test platforms go wrong. The `-noble` tag is Ubuntu 24.04, which ships
 # Python 3.12 (the app needs >=3.11) and a pip new enough for
 # --break-system-packages; the jammy tag's Python 3.10 cannot run the app.
-FROM mcr.microsoft.com/playwright:v1.49.0-noble
+FROM mcr.microsoft.com/playwright:v1.63.0-noble
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
